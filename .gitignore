@@ -1,0 +1,23 @@
+# Claves y entorno
+.env
+*.env
+
+# Base de datos local (se genera automáticamente)
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+tasks/
