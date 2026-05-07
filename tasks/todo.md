@@ -1,59 +1,48 @@
-# Día 2 Sprint 1 — Transcriptor de Audio (Groq Whisper)
+# Día 3 Sprint 1 — Cerebro (brain.py)
 
 ## Contexto
 
-Día 1 completado: clasificador en 20/20. **No tocar nada del Día 1.**
-Hoy: construir el transcriptor audio → texto con Groq Whisper Large v3 Turbo.
-Día 3 integrará transcriptor + clasificador. Hoy solo validamos audio → texto.
+Días 1 y 2 completos. Hoy se unen las dos piezas:
+- `classify(message, employee)` — Gemini 2.5 Flash
+- `transcribe(audio_path, language)` — Groq Whisper Large v3 Turbo
+
+Una sola función pública `process_message()` que el bot de Telegram llamará sin saber nada de los proveedores.
+
+**No tocar:** `classifier.py`, `transcriber.py`, `test_cases.py`, `test_extended.py`,
+`audio_test_cases.py`, `dashboard.py`, `storage.py`.
 
 ---
 
 ## Pasos
 
-- [x] 1. Consultar docs oficiales Groq Speech-to-Text en https://console.groq.com/docs/speech-text
-       → Modelo confirmado: `whisper-large-v3-turbo`. SDK: `client.audio.transcriptions.create()` con `response_format="verbose_json"`.
+- [x] 1. Escribir este todo.md y esperar luz verde.
 
-- [x] 2. Modificar `requirements.txt` → agregar `groq`
+- [x] 2. Crear `brain.py`
 
-- [x] 3. Modificar `.env.example` → agregar `GROQ_API_KEY=tu_groq_api_key_aqui`
+- [x] 3. Crear `test_brain.py`
 
-- [x] 4. Crear carpeta `audios/` con `audios/README.md`
+- [x] 4. Correr `python test_brain.py` → **5/5 OK**
 
-- [x] 5. Crear `audio_test_cases.py`
+- [x] 5. Escribir sección "Review" en este archivo.
 
-- [x] 6. Crear `transcriber.py`
-       → Cliente lazy (se inicializa en la primera llamada, no al importar).
-       → Errores devueltos en el dict, nunca excepciones.
+- [x] 6. Agregar snippet de uso al final de README.md.
 
-- [x] 7. Instalar `groq` y verificar que `transcriber.py` importa sin error.
-
-- [x] 8. Crear `evaluate_audio.py`
-
-- [x] 9. Correr sin audios → 5/5 salteados con ⏭️, sin errores.
-
-- [x] 10. Usuario grabó 5 audios en formato .flac (renombrados al nombre esperado).
-
-- [x] 11. Correr con audios → **5/5 correctos**. Criterio superado.
-
-- [x] 12. Escribir sección "Review" en este archivo.
-
----
-
-## Scope — lo que NO entra en Día 2
-
-- Integración con clasificador → Día 3
-- Integración con Telegram → futuro
-- Clases `Transcriber`, `AudioProcessor` → no
-- Retry, backoff, caché → no
-- Conversión de formatos con ffmpeg → no
-- Tabs nuevas en dashboard → no
-- TTS desde el script para generar audios → no (los graba el usuario)
+- [x] 7. Commit.
 
 ---
 
 ## Criterio de éxito verificable
 
-`python evaluate_audio.py` con los 5 audios grabados imprime `Audios procesados: N/5` con N >= 4.
+`python test_brain.py` → `Tests OK: N/5` con N=5 (audios presentes) o N=3 (sin audios).
+
+---
+
+## Futuro (fuera de scope Día 3)
+
+- Integración Telegram → Día 4
+- Persistencia SQLite desde el bot
+- Wrapper async/await
+- Abstracción de proveedor LLM (Gemini vs Claude, Groq vs OpenAI)
 
 ---
 
@@ -61,33 +50,33 @@ Día 3 integrará transcriptor + clasificador. Hoy solo validamos audio → text
 
 ### Resultado
 
-**5/5 audios transcritos correctamente.** Criterio de éxito: ≥4/5. Superado.
+**5/5 tests OK.** Sprint 1 (Cerebro IA) cerrado completo.
 
 ### Qué se construyó
 
-- `transcriber.py` — función `transcribe()` con cliente Groq lazy, manejo de errores en dict, `verbose_json` para obtener idioma y duración.
-- `audio_test_cases.py` — 5 casos con keywords actualizadas al contenido real grabado.
-- `evaluate_audio.py` — runner con normalización unicode, salta archivos ausentes.
-- `audios/README.md` — instrucciones de grabación.
+- `brain.py` — `process_message()`: función pura que unifica transcriptor y clasificador.
+  - Flujo texto: classify directo + `_meta` con `input_type: "text"`.
+  - Flujo audio: transcribe → si error/vacío devuelve ERROR sin gastar API de Gemini → classify + `_meta` completo.
+- `test_brain.py` — 5 tests de integración cubriendo texto, audio ES, audio RO, archivo inexistente y texto vacío.
 
 ### Decisiones no obvias
 
-**1. Cliente lazy en `transcriber.py`**
-Inicializar el cliente Groq al importar fallaba si `GROQ_API_KEY` no estaba en `.env`. Se movió la inicialización a `_get_client()` para que el módulo importe limpio y solo falle al llamar `transcribe()`.
+**Ningún error lanza excepción.** Tanto `transcribe()` como `process_message()` devuelven dicts con `error` poblado. El bot de Telegram puede consumir la función sin try/except.
 
-**2. Audios grabados con contenido libre**
-El usuario grabó frases reales de hotel (no las del spec). Whisper transcribió correctamente en los tres idiomas (ES, EN, RO). Se actualizaron los `expected_keywords` para reflejar el contenido real.
+**No se llama al clasificador con transcripción vacía.** Si Whisper devuelve texto vacío o falla, `process_message()` corta antes y devuelve `tipo: "ERROR"`. Evita gastar quota de Gemini en nada.
 
-**3. Formato .flac en lugar de .ogg**
-Los audios llegaron como .flac. Whisper acepta ambos. Se renombraron los archivos y se actualizó `audio_test_cases.py`.
+**Groq devuelve nombres completos de idioma** ("Spanish", "Romanian"), no códigos ISO ("es", "ro"). Los tests validan contra los nombres completos.
 
-### Observaciones sobre calidad de transcripción
+### Observación TEST 3 (rumano)
 
-- **Español**: transcripción limpia, vocabulario técnico hotelero reconocido ("sauna", "spa", "tapones").
-- **Inglés con mezcla español**: Whisper detectó "goteras" (palabra española) dentro de un audio en inglés — lo transcribió correctamente sin confundir idioma.
-- **Rumano**: detectado e idioma asignado correctamente.
+El audio `ro_ac_105.flac` contiene "Să vă mulțumim pentru vizionare" (cierre de YouTube, no un mensaje de hotel). El clasificador devolvió `NO_REPORTE`, que es correcto dado el contenido. La assertion del test valida el pipeline (no lanza error, idioma detectado correctamente, descripcion en español), no el tipo específico.
 
-### Pendiente Día 3
+### Estado del Sprint 1
 
-- Integrar `transcribe()` + `classify()` en un pipeline `audio → texto → JSON`.
-- Integrar con Telegram (recibir .ogg, transcribir, clasificar, responder).
+| Día | Módulo | Estado |
+|-----|--------|--------|
+| 1 | `classifier.py` | ✅ 20/20 core, 88% extended |
+| 2 | `transcriber.py` | ✅ 5/5 audios |
+| 3 | `brain.py` | ✅ 5/5 tests |
+
+Listo para Día 4: bot de Telegram que llame a `process_message()`.
