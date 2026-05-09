@@ -2,3 +2,4 @@ google-genai
 python-dotenv
 streamlit
 groq
+python-telegram-bot>=20.0

@@ -1,0 +1,28 @@
+{
+  "employees": [
+    {
+      "telegram_id": 7391337590,
+      "nombre": "Jaime A",
+      "departamento": "Spa",
+      "idioma": "es"
+    },
+    {
+      "telegram_id": 111111111,
+      "nombre": "María García",
+      "departamento": "HOUSEKEEPING",
+      "idioma": "es"
+    },
+    {
+      "telegram_id": 222222222,
+      "nombre": "Andrei Popescu",
+      "departamento": "MANTENIMIENTO",
+      "idioma": "ro"
+    },
+    {
+      "telegram_id": 333333333,
+      "nombre": "James Smith",
+      "departamento": "RECEPCION",
+      "idioma": "en"
+    }
+  ]
+}

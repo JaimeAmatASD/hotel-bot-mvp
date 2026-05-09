@@ -1,0 +1,36 @@
+import json
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filters
+
+load_dotenv()
+
+from handlers.text_handler import handle_text
+from handlers.audio_handler import handle_audio
+from handlers.callback_handler import handle_callback
+
+
+def load_employees() -> dict:
+    path = Path(__file__).parent / "config" / "employees.json"
+    data = json.loads(path.read_text())
+    return {e["telegram_id"]: e for e in data["employees"]}
+
+
+def main():
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    employees = load_employees()
+
+    app = Application.builder().token(token).build()
+    app.bot_data["employees"] = employees
+
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_audio))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+
+    print("Bot iniciado. Ctrl+C para detener.")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
