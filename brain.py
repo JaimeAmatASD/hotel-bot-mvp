@@ -1,5 +1,32 @@
 from classifier import classify
 from transcriber import transcribe
+from config.rules import get_critical_field, is_generic_location, MISSING_FIELD_QUESTIONS
+
+
+def _apply_followup(result: dict) -> dict:
+    """Mutates result in-place: detects generic location and adds needs_followup if needed."""
+    tipo = result.get("tipo")
+    if tipo in ("ERROR", "NO_REPORTE"):
+        return result
+
+    campos = result.get("campos_faltantes") or []
+
+    # Detect generic location (e.g. "Habitación" without room number) and add to campos_faltantes
+    if tipo == "INCIDENCIA" and is_generic_location(result.get("ubicacion")):
+        normalized = [c.lower() for c in campos]
+        if "ubicacion" not in normalized and "ubicación" not in normalized:
+            campos = list(campos) + ["ubicacion"]
+            result["campos_faltantes"] = campos
+
+    critical = get_critical_field(tipo, campos)
+    if critical:
+        question = MISSING_FIELD_QUESTIONS.get(
+            critical.lower().replace("ó", "o").replace("á", "a"),
+            f"Necesito un dato más: ¿{critical}?"
+        )
+        result["needs_followup"] = {"field": critical, "question": question}
+
+    return result
 
 
 def process_message(
@@ -8,6 +35,7 @@ def process_message(
     *,
     is_audio: bool = False,
     language_hint: str | None = None,
+    previous_context: dict | None = None,
 ) -> dict:
     if is_audio:
         t = transcribe(input, language=language_hint)
@@ -35,7 +63,7 @@ def process_message(
                 },
             }
 
-        result = classify(t["text"], employee)
+        result = classify(t["text"], employee, previous_context=previous_context)
         result["_meta"] = {
             "input_type": "audio",
             "transcription": t["text"],
@@ -43,7 +71,7 @@ def process_message(
             "audio_duration_seconds": t["duration_seconds"],
             "error": None,
         }
-        return result
+        return _apply_followup(result)
 
     if not input.strip():
         return {
@@ -68,7 +96,7 @@ def process_message(
             },
         }
 
-    result = classify(input, employee)
+    result = classify(input, employee, previous_context=previous_context)
     result["_meta"] = {
         "input_type": "text",
         "transcription": None,
@@ -76,4 +104,4 @@ def process_message(
         "audio_duration_seconds": None,
         "error": None,
     }
-    return result
+    return _apply_followup(result)

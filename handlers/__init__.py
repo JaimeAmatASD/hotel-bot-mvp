@@ -45,6 +45,10 @@ def format_summary(result: dict) -> str:
     return "\n".join(lines)
 
 
+def format_summary_with_warning(result: dict) -> str:
+    return format_summary(result) + "\n\n⚠️ <i>Tengo dudas sobre la clasificación, confirmá si está bien.</i>"
+
+
 def get_employee(update, context):
     tid = update.effective_user.id
     return context.bot_data["employees"].get(tid)

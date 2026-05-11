@@ -66,17 +66,34 @@ Pregúntate: ¿este dato hace que alguien del hotel deba hacer algo diferente? S
   "confianza": number
 }
 
-# Contexto del empleado
+# Importante sobre el departamento del empleado
 
-Recibirás antes del mensaje un bloque con: nombre, departamento (HOUSEKEEPING, RECEPCION, MANTENIMIENTO, RESTAURANTE, OTRO), idioma preferido. Úsalo para entender el contexto pero no lo agregues al output."""
+El departamento del empleado es solo metadato sobre quién reporta. NO asumas que el mensaje es sobre su departamento. Un empleado del spa puede reportar problemas de mantenimiento, recepción, jardinería o cualquier cosa que vea durante su turno. Clasifica EXCLUSIVAMENTE en base al CONTENIDO del mensaje, no en base al departamento del empleado. El departamento solo sirve para entender el contexto del lenguaje (un empleado de cocina puede usar jerga gastronómica) pero NO determina la categoría."""
 
 
-def classify(message: str, employee: dict) -> dict:
+def classify(message: str, employee: dict, previous_context: dict | None = None) -> dict:
+    if previous_context:
+        prev_text = previous_context.get("original_text", "")
+        prev_tipo = previous_context.get("result", {}).get("tipo", "")
+        prev_desc = previous_context.get("result", {}).get("descripcion", "")
+        correction_block = (
+            f'El empleado ya envió un mensaje anteriormente que se clasificó así:\n'
+            f'- Mensaje original: "{prev_text}"\n'
+            f'- Tipo asignado: {prev_tipo}\n'
+            f'- Descripción generada: {prev_desc}\n\n'
+            f'Ahora está aclarando o corrigiendo ese reporte con información adicional. '
+            f'Reclasifica considerando AMBAS piezas juntas, no solo la nueva.\n\n'
+            f'Información adicional del empleado: {message}'
+        )
+        effective_message = correction_block
+    else:
+        effective_message = message
+
     prompt = (
         f"Empleado: {employee['nombre']}, "
         f"Departamento: {employee['departamento']}, "
         f"Idioma: {employee['idioma']}\n"
-        f"Mensaje: {message}"
+        f"Mensaje: {effective_message}"
     )
 
     response = client.models.generate_content(

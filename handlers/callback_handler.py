@@ -1,3 +1,4 @@
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 from handlers import get_employee
@@ -24,7 +25,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"✅ Guardado. Gracias, {nombre}.")
 
     elif action == "correct":
-        context.user_data.pop("pending", None)
+        context.user_data["awaiting_correction"] = True
+        context.user_data["correction_started_at"] = datetime.now().isoformat()
         await query.edit_message_text(
-            "✏️ Describí de nuevo el problema con más detalle y lo proceso de nuevo."
+            "✏️ Decime qué corregir o agregar (texto o audio). Recuerdo lo que reportaste antes y lo reproceso con tu corrección."
         )
