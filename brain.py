@@ -1,6 +1,6 @@
 from classifier import classify
 from transcriber import transcribe
-from config.rules import get_critical_field, is_generic_location, MISSING_FIELD_QUESTIONS
+from config.rules import get_critical_field, is_location_complete, MISSING_FIELD_QUESTIONS
 
 
 def _apply_followup(result: dict) -> dict:
@@ -11,9 +11,8 @@ def _apply_followup(result: dict) -> dict:
 
     campos = result.get("campos_faltantes") or []
 
-    # Detect null or generic location (e.g. "Habitación" without room number) and add to campos_faltantes
-    ubicacion = result.get("ubicacion")
-    if tipo == "INCIDENCIA" and (ubicacion is None or is_generic_location(ubicacion)):
+    # If location is absent or incomplete (no room number, no common area), mark as missing
+    if tipo == "INCIDENCIA" and not is_location_complete(result.get("ubicacion")):
         normalized = [c.lower() for c in campos]
         if "ubicacion" not in normalized and "ubicación" not in normalized:
             campos = list(campos) + ["ubicacion"]
