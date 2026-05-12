@@ -45,6 +45,39 @@ def format_summary(result: dict) -> str:
     return "\n".join(lines)
 
 
+def format_debug_block(result: dict) -> str:
+    lines = ["─────────────", "🔍 <b>Detalles técnicos:</b>"]
+
+    confianza = result.get("confianza")
+    if confianza is not None:
+        lines.append(f"• Confianza: {round(confianza * 100)}%")
+
+    idioma = result.get("idioma_original")
+    if idioma:
+        lines.append(f"• Idioma original: {idioma}")
+
+    huesped = result.get("huesped_afectado")
+    if huesped is not None:
+        lines.append(f"• Huésped afectado: {'sí' if huesped else 'no'}")
+
+    hab = result.get("habitacion_huesped")
+    if hab:
+        lines.append(f"• Habitación huésped: {hab}")
+
+    nota = result.get("tipo_nota_huesped")
+    if nota:
+        lines.append(f"• Tipo nota huésped: {nota}")
+
+    subcat = result.get("subcategoria")
+    if subcat:
+        lines.append(f"• Subcategoría: {subcat}")
+
+    campos = result.get("campos_faltantes") or []
+    lines.append(f"• Campos faltantes: {', '.join(campos) if campos else 'ninguno'}")
+
+    return "\n".join(lines)
+
+
 def format_summary_with_warning(result: dict) -> str:
     return format_summary(result) + "\n\n⚠️ <i>Tengo dudas sobre la clasificación, confirmá si está bien.</i>"
 

@@ -4,8 +4,9 @@ from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ContextTypes
 from brain import process_message
-from handlers import get_employee, format_summary, format_summary_with_warning, CONFIRM_KEYBOARD
+from handlers import get_employee, format_summary, format_summary_with_warning, format_debug_block, CONFIRM_KEYBOARD
 from config.rules import CORRECTION_TIMEOUT_MINUTES
+from storage import get_debug_mode
 
 
 def _pop_followup_state(context) -> tuple[dict | None, bool]:
@@ -51,6 +52,8 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Followup (bot-initiated) has priority over correction (user-initiated)
+    debug_mode = get_debug_mode(update.effective_user.id)
+
     previous_context, timed_out = _pop_followup_state(context)
     if previous_context is None and not timed_out:
         previous_context, timed_out = _pop_correction_state(context)
@@ -115,6 +118,9 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         summary = format_summary_with_warning(result)
     else:
         summary = format_summary(result)
+
+    if debug_mode:
+        summary += "\n\n" + format_debug_block(result)
 
     parts = []
     if transcription:

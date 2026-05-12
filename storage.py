@@ -33,6 +33,30 @@ def init_db():
                 descripcion      TEXT
             )
         """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                telegram_id INTEGER PRIMARY KEY,
+                debug_mode  INTEGER DEFAULT 0
+            )
+        """)
+
+
+def get_debug_mode(telegram_id: int) -> bool:
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT debug_mode FROM user_preferences WHERE telegram_id = ?", (telegram_id,)
+        ).fetchone()
+    return bool(row["debug_mode"]) if row else False
+
+
+def set_debug_mode(telegram_id: int, enabled: bool) -> None:
+    init_db()
+    with _conn() as con:
+        con.execute(
+            "INSERT OR REPLACE INTO user_preferences (telegram_id, debug_mode) VALUES (?, ?)",
+            (telegram_id, int(enabled)),
+        )
 
 
 def save(employee: dict, message: str, result: dict):

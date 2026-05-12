@@ -2,8 +2,9 @@ from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ContextTypes
 from brain import process_message
-from handlers import get_employee, format_summary, format_summary_with_warning, CONFIRM_KEYBOARD
+from handlers import get_employee, format_summary, format_summary_with_warning, format_debug_block, CONFIRM_KEYBOARD
 from config.rules import CORRECTION_TIMEOUT_MINUTES
+from storage import get_debug_mode
 
 
 def _pop_followup_state(context) -> tuple[dict | None, bool]:
@@ -48,6 +49,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ No estás registrado. Contactá al administrador.")
         return
 
+    debug_mode = get_debug_mode(update.effective_user.id)
+
     # Followup (bot-initiated) has priority over correction (user-initiated)
     previous_context, timed_out = _pop_followup_state(context)
     if previous_context is None and not timed_out:
@@ -90,6 +93,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         summary = format_summary_with_warning(result)
     else:
         summary = format_summary(result)
+
+    if debug_mode:
+        summary += "\n\n" + format_debug_block(result)
 
     await update.message.reply_text(
         f"{summary}\n\n<i>¿Es correcto?</i>",
