@@ -36,7 +36,11 @@ def process_message(
     is_audio: bool = False,
     language_hint: str | None = None,
     previous_context: dict | None = None,
+    image_path: str | None = None,
 ) -> dict:
+    # Use original photo from previous context if no new image provided (correction/followup flow)
+    effective_image = image_path or (previous_context.get("image_path") if previous_context else None)
+
     if is_audio:
         t = transcribe(input, language=language_hint)
 
@@ -60,20 +64,23 @@ def process_message(
                     "audio_language_detected": t["language"],
                     "audio_duration_seconds": t["duration_seconds"],
                     "error": t["error"] or "transcripción vacía",
+                    "photo_path": None,
                 },
             }
 
-        result = classify(t["text"], employee, previous_context=previous_context)
+        result = classify(t["text"], employee, previous_context=previous_context,
+                          image_path=effective_image)
         result["_meta"] = {
             "input_type": "audio",
             "transcription": t["text"],
             "audio_language_detected": t["language"],
             "audio_duration_seconds": t["duration_seconds"],
             "error": None,
+            "photo_path": effective_image,
         }
         return _apply_followup(result)
 
-    if not input.strip():
+    if not input.strip() and not effective_image:
         return {
             "tipo": "ERROR",
             "ubicacion": None,
@@ -93,15 +100,19 @@ def process_message(
                 "audio_language_detected": None,
                 "audio_duration_seconds": None,
                 "error": "mensaje vacío",
+                "photo_path": None,
             },
         }
 
-    result = classify(input, employee, previous_context=previous_context)
+    result = classify(input, employee, previous_context=previous_context,
+                      image_path=effective_image)
+    input_type = "photo" if image_path else "text"
     result["_meta"] = {
-        "input_type": "text",
+        "input_type": input_type,
         "transcription": None,
         "audio_language_detected": None,
         "audio_duration_seconds": None,
         "error": None,
+        "photo_path": effective_image,
     }
     return _apply_followup(result)

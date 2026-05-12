@@ -39,6 +39,10 @@ def init_db():
                 debug_mode  INTEGER DEFAULT 0
             )
         """)
+        # Add photo_path column if missing (migration for existing DBs)
+        cols = [row[1] for row in con.execute("PRAGMA table_info(classifications)").fetchall()]
+        if "photo_path" not in cols:
+            con.execute("ALTER TABLE classifications ADD COLUMN photo_path TEXT")
 
 
 def get_debug_mode(telegram_id: int) -> bool:
@@ -66,8 +70,8 @@ def save(employee: dict, message: str, result: dict):
             INSERT INTO classifications
             (timestamp, employee_name, employee_dept, message, tipo, prioridad,
              categoria, ubicacion, confianza, campos_faltantes, habitacion,
-             huesped_afectado, descripcion)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             huesped_afectado, descripcion, photo_path)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             datetime.now().isoformat(timespec="seconds"),
             employee["nombre"],
@@ -82,6 +86,7 @@ def save(employee: dict, message: str, result: dict):
             result.get("habitacion_huesped"),
             int(result.get("huesped_afectado") or 0),
             result.get("descripcion"),
+            result.get("_meta", {}).get("photo_path"),
         ))
 
 

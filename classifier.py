@@ -68,19 +68,38 @@ Pregúntate: ¿este dato hace que alguien del hotel deba hacer algo diferente? S
 
 # Importante sobre el departamento del empleado
 
-El departamento del empleado es solo metadato sobre quién reporta. NO asumas que el mensaje es sobre su departamento. Un empleado del spa puede reportar problemas de mantenimiento, recepción, jardinería o cualquier cosa que vea durante su turno. Clasifica EXCLUSIVAMENTE en base al CONTENIDO del mensaje, no en base al departamento del empleado. El departamento solo sirve para entender el contexto del lenguaje (un empleado de cocina puede usar jerga gastronómica) pero NO determina la categoría."""
+El departamento del empleado es solo metadato sobre quién reporta. NO asumas que el mensaje es sobre su departamento. Un empleado del spa puede reportar problemas de mantenimiento, recepción, jardinería o cualquier cosa que vea durante su turno. Clasifica EXCLUSIVAMENTE en base al CONTENIDO del mensaje, no en base al departamento del empleado. El departamento solo sirve para entender el contexto del lenguaje (un empleado de cocina puede usar jerga gastronómica) pero NO determina la categoría.
+
+# Cuando recibes una imagen
+
+A veces recibirás una imagen además del mensaje de texto (o sin texto, solo imagen). Reglas:
+
+1. La imagen es información visual para apoyar la clasificación.
+2. Si hay texto del empleado, el TEXTO tiene prioridad. La imagen enriquece la descripción pero no contradice la intención del empleado.
+3. Si NO hay texto, la imagen es la única información. Clasifica en base a lo que ves: una rotura → INCIDENCIA, una habitación con detalles personales del huésped → posible GUEST_INTEL, etc.
+4. En la "descripcion" del JSON, incorpora lo que viste en la imagen de forma natural ("Goteo en grifo de baño, agua acumulada en suelo").
+5. Si la imagen es ambigua o no muestra problema claro, asigna confianza < 0.6 y poné el campo "ubicación" como null y agregalo a "campos_faltantes" para que el bot pida más info.
+6. La imagen NO determina la ubicación específica salvo que muestre claramente un número de habitación o cartel."""
 
 
-def classify(message: str, employee: dict, previous_context: dict | None = None) -> dict:
+def classify(
+    message: str,
+    employee: dict,
+    previous_context: dict | None = None,
+    image_path: str | None = None,
+) -> dict:
     if previous_context:
         prev_text = previous_context.get("original_text", "")
         prev_tipo = previous_context.get("result", {}).get("tipo", "")
         prev_desc = previous_context.get("result", {}).get("descripcion", "")
+        had_photo = bool(previous_context.get("image_path"))
+        photo_note = " El empleado también adjuntó una foto en ese mensaje anterior." if had_photo else ""
         correction_block = (
             f'El empleado ya envió un mensaje anteriormente que se clasificó así:\n'
             f'- Mensaje original: "{prev_text}"\n'
             f'- Tipo asignado: {prev_tipo}\n'
-            f'- Descripción generada: {prev_desc}\n\n'
+            f'- Descripción generada: {prev_desc}\n'
+            f'{photo_note}\n\n'
             f'Ahora está aclarando o corrigiendo ese reporte con información adicional. '
             f'Reclasifica considerando AMBAS piezas juntas, no solo la nueva.\n\n'
             f'Información adicional del empleado: {message}'
@@ -96,9 +115,16 @@ def classify(message: str, employee: dict, previous_context: dict | None = None)
         f"Mensaje: {effective_message}"
     )
 
+    if image_path:
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+        contents = [prompt, types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")]
+    else:
+        contents = prompt
+
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=prompt,
+        contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             response_mime_type="application/json",
