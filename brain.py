@@ -11,8 +11,9 @@ def _apply_followup(result: dict) -> dict:
 
     campos = result.get("campos_faltantes") or []
 
-    # Detect generic location (e.g. "Habitación" without room number) and add to campos_faltantes
-    if tipo == "INCIDENCIA" and is_generic_location(result.get("ubicacion")):
+    # Detect null or generic location (e.g. "Habitación" without room number) and add to campos_faltantes
+    ubicacion = result.get("ubicacion")
+    if tipo == "INCIDENCIA" and (ubicacion is None or is_generic_location(ubicacion)):
         normalized = [c.lower() for c in campos]
         if "ubicacion" not in normalized and "ubicación" not in normalized:
             campos = list(campos) + ["ubicacion"]

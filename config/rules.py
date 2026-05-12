@@ -28,11 +28,15 @@ def _normalize(text: str) -> str:
 
 
 def get_critical_field(tipo: str, campos_faltantes: list) -> str | None:
+    """Returns canonical critical field name if any campos_faltantes matches, else None.
+    Uses substring matching so 'número de habitación' matches 'habitacion'."""
     critical = CRITICAL_MISSING_FIELDS.get(tipo, [])
     critical_normalized = [_normalize(c) for c in critical]
     for campo in campos_faltantes:
-        if _normalize(campo) in critical_normalized:
-            return campo
+        campo_norm = _normalize(campo)
+        for i, crit_norm in enumerate(critical_normalized):
+            if crit_norm in campo_norm or campo_norm in crit_norm:
+                return critical[i]  # return canonical form for MISSING_FIELD_QUESTIONS lookup
     return None
 
 
