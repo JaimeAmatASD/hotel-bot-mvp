@@ -63,10 +63,10 @@ def set_debug_mode(telegram_id: int, enabled: bool) -> None:
         )
 
 
-def save(employee: dict, message: str, result: dict):
+def save(employee: dict, message: str, result: dict) -> int:
     init_db()
     with _conn() as con:
-        con.execute("""
+        cur = con.execute("""
             INSERT INTO classifications
             (timestamp, employee_name, employee_dept, message, tipo, prioridad,
              categoria, ubicacion, confianza, campos_faltantes, habitacion,
@@ -88,6 +88,7 @@ def save(employee: dict, message: str, result: dict):
             result.get("descripcion"),
             result.get("_meta", {}).get("photo_path"),
         ))
+        return cur.lastrowid
 
 
 def get_employees():
@@ -159,3 +160,16 @@ def get_all_history():
             LIMIT 200
         """).fetchall()
     return [dict(r) for r in rows]
+
+
+_DISPLAY_PREFIXES = {
+    "INCIDENCIA": "INC",
+    "OBSERVACION": "OBS",
+    "GUEST_INTEL": "MEM",
+    "NO_REPORTE": "NR",
+}
+
+
+def generate_display_id(tipo: str, id: int) -> str:
+    prefix = _DISPLAY_PREFIXES.get(tipo, "??")
+    return f"{prefix}-{id:03d}"
