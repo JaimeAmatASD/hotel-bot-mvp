@@ -3,6 +3,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from handlers import get_employee
 from storage import save
+import notifier
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -18,11 +19,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         employee = get_employee(update, context)
-        save(employee, pending["original_text"], pending["result"])
+        result = pending["result"]
+        incident_id = save(employee, pending["original_text"], result)
         context.user_data.pop("pending", None)
 
         nombre = employee["nombre"].split()[0] if employee else "empleado"
         await query.edit_message_text(f"✅ Guardado. Gracias, {nombre}.")
+
+        if result.get("tipo") == "INCIDENCIA":
+            incident = {
+                **result,
+                "id": incident_id,
+                "employee_name": employee["nombre"],
+                "employee_dept": employee.get("departamento"),
+                "photo_path": result.get("_meta", {}).get("photo_path"),
+            }
+            await notifier.notify_incident(
+                bot=context.bot,
+                incident=incident,
+                employees=context.bot_data["employees"],
+                reporter_employee=employee,
+            )
 
     elif action == "correct":
         context.user_data["awaiting_correction"] = True
