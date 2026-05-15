@@ -88,3 +88,196 @@ def test_format_notification_con_redirect():
     assert "Carlos Enc Mant" in msg
     assert "INC-042" in msg
     assert "MANTENIMIENTO" in msg
+
+
+# ---------------------------------------------------------------------------
+# Tests 3-11: notify_incident (async, usa bot mock y storage mock)
+# ---------------------------------------------------------------------------
+
+INCIDENT_INCIDENCIA = {
+    "id": 10,
+    "tipo": "INCIDENCIA",
+    "prioridad": "ALTA",
+    "categoria": "MANTENIMIENTO",
+    "subcategoria": None,
+    "ubicacion": "Habitación 101",
+    "descripcion": "Luz rota",
+    "photo_path": None,
+    "employee_name": "Ana",
+    "employee_dept": "SPA",
+}
+
+INCIDENT_OBSERVACION = {
+    "id": 11,
+    "tipo": "OBSERVACION",
+    "prioridad": None,
+    "categoria": "LIMPIEZA",
+    "subcategoria": None,
+    "ubicacion": "Lobby",
+    "descripcion": "Alfombra sucia",
+    "photo_path": None,
+    "employee_name": "Ana",
+    "employee_dept": "SPA",
+}
+
+
+def make_bot():
+    bot = AsyncMock()
+    bot.send_message = AsyncMock(return_value=MagicMock())
+    bot.send_photo = AsyncMock(return_value=MagicMock())
+    return bot
+
+
+# Test 3: INCIDENCIA → llama send_notification_with_logging para encargado + gerente
+@pytest.mark.asyncio
+async def test_notify_incidencia_llama_encargado_y_gerente():
+    from notifier import notify_incident
+    bot = make_bot()
+    with patch("notifier.storage.save_notification"), \
+         patch("notifier.storage.get_notification_preferences", return_value={"mode": "todo", "excluded_departments": []}), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+        await notify_incident(bot=bot, incident=INCIDENT_INCIDENCIA, employees=EMPLOYEES, reporter_employee=REPORTER)
+
+    assert bot.send_message.call_count == 2
+    called_ids = {call.kwargs["chat_id"] for call in bot.send_message.call_args_list}
+    assert 2001 in called_ids
+    assert 3001 in called_ids
+
+
+# Test 4: OBSERVACION → NO dispara notificaciones
+@pytest.mark.asyncio
+async def test_notify_observacion_no_notifica():
+    from notifier import notify_incident
+    bot = make_bot()
+    with patch("notifier.storage.save_notification"), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+        await notify_incident(bot=bot, incident=INCIDENT_OBSERVACION, employees=EMPLOYEES, reporter_employee=REPORTER)
+
+    assert bot.send_message.call_count == 0
+    assert bot.send_photo.call_count == 0
+
+
+# Test 5: redirect_mode=admin → usa ADMIN_TELEGRAM_ID
+@pytest.mark.asyncio
+async def test_notify_redirect_usa_admin_id():
+    from notifier import notify_incident
+    bot = make_bot()
+    with patch("notifier.storage.save_notification"), \
+         patch("notifier.storage.get_notification_preferences", return_value={"mode": "todo", "excluded_departments": []}), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "admin"), \
+         patch("notifier.settings.ADMIN_TELEGRAM_ID", 9999):
+        await notify_incident(bot=bot, incident=INCIDENT_INCIDENCIA, employees=EMPLOYEES, reporter_employee=REPORTER)
+
+    for call in bot.send_message.call_args_list:
+        assert call.kwargs["chat_id"] == 9999
+
+
+# Test 6: Gerente mode=nada → NO recibe MEDIA
+@pytest.mark.asyncio
+async def test_gerente_modo_nada_no_recibe_media():
+    from notifier import notify_incident
+    bot = make_bot()
+    incident_media = {**INCIDENT_INCIDENCIA, "prioridad": "MEDIA"}
+    with patch("notifier.storage.save_notification"), \
+         patch("notifier.storage.get_notification_preferences", return_value={"mode": "nada", "excluded_departments": []}), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+        await notify_incident(bot=bot, incident=incident_media, employees=EMPLOYEES, reporter_employee=REPORTER)
+
+    called_ids = {call.kwargs["chat_id"] for call in bot.send_message.call_args_list}
+    assert 2001 in called_ids
+    assert 3001 not in called_ids
+
+
+# Test 7: Gerente mode=nada → SÍ recibe CRITICA (excepción absoluta)
+@pytest.mark.asyncio
+async def test_gerente_modo_nada_si_recibe_critica():
+    from notifier import notify_incident
+    bot = make_bot()
+    incident_critica = {**INCIDENT_INCIDENCIA, "prioridad": "CRITICA"}
+    with patch("notifier.storage.save_notification"), \
+         patch("notifier.storage.get_notification_preferences", return_value={"mode": "nada", "excluded_departments": []}), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+        await notify_incident(bot=bot, incident=incident_critica, employees=EMPLOYEES, reporter_employee=REPORTER)
+
+    called_ids = {call.kwargs["chat_id"] for call in bot.send_message.call_args_list}
+    assert 3001 in called_ids
+
+
+# Test 8: Gerente mode=criticas → recibe ALTA y CRITICA, no MEDIA ni BAJA
+@pytest.mark.asyncio
+async def test_gerente_modo_criticas_filtra_por_prioridad():
+    from notifier import notify_incident
+
+    async def check_prioridad(prioridad, expect_gerente):
+        bot = make_bot()
+        inc = {**INCIDENT_INCIDENCIA, "prioridad": prioridad}
+        with patch("notifier.storage.save_notification"), \
+             patch("notifier.storage.get_notification_preferences", return_value={"mode": "criticas", "excluded_departments": []}), \
+             patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+            await notify_incident(bot=bot, incident=inc, employees=EMPLOYEES, reporter_employee=REPORTER)
+        called_ids = {call.kwargs["chat_id"] for call in bot.send_message.call_args_list}
+        assert (3001 in called_ids) == expect_gerente, f"prioridad={prioridad}, expect_gerente={expect_gerente}"
+
+    await check_prioridad("CRITICA", True)
+    await check_prioridad("ALTA", True)
+    await check_prioridad("MEDIA", False)
+    await check_prioridad("BAJA", False)
+
+
+# Test 9: Gerente con depto excluido → no recibe de ese depto (excepto CRITICA)
+@pytest.mark.asyncio
+async def test_gerente_depto_excluido_no_recibe_excepto_critica():
+    from notifier import notify_incident
+
+    bot = make_bot()
+    with patch("notifier.storage.save_notification"), \
+         patch("notifier.storage.get_notification_preferences",
+               return_value={"mode": "todo", "excluded_departments": ["MANTENIMIENTO"]}), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+        await notify_incident(bot=bot, incident=INCIDENT_INCIDENCIA, employees=EMPLOYEES, reporter_employee=REPORTER)
+    called_ids = {call.kwargs["chat_id"] for call in bot.send_message.call_args_list}
+    assert 3001 not in called_ids
+
+    bot2 = make_bot()
+    incident_critica = {**INCIDENT_INCIDENCIA, "prioridad": "CRITICA"}
+    with patch("notifier.storage.save_notification"), \
+         patch("notifier.storage.get_notification_preferences",
+               return_value={"mode": "todo", "excluded_departments": ["MANTENIMIENTO"]}), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+        await notify_incident(bot=bot2, incident=incident_critica, employees=EMPLOYEES, reporter_employee=REPORTER)
+    called_ids2 = {call.kwargs["chat_id"] for call in bot2.send_message.call_args_list}
+    assert 3001 in called_ids2
+
+
+# Test 10: Encargado siempre recibe lo de su depto sin importar preferencias
+@pytest.mark.asyncio
+async def test_encargado_siempre_recibe_sin_filtros():
+    from notifier import notify_incident
+    bot = make_bot()
+    with patch("notifier.storage.save_notification"), \
+         patch("notifier.storage.get_notification_preferences", return_value={"mode": "nada", "excluded_departments": ["MANTENIMIENTO"]}), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+        await notify_incident(bot=bot, incident=INCIDENT_INCIDENCIA, employees=EMPLOYEES, reporter_employee=REPORTER)
+
+    called_ids = {call.kwargs["chat_id"] for call in bot.send_message.call_args_list}
+    assert 2001 in called_ids
+
+
+# Test 11: Notificación fallida → registrada con status="failed" y error_message
+@pytest.mark.asyncio
+async def test_notificacion_fallida_se_registra_como_failed():
+    from notifier import notify_incident
+    bot = make_bot()
+    bot.send_message = AsyncMock(side_effect=Exception("Telegram timeout"))
+
+    saved_notifications = []
+
+    with patch("notifier.storage.save_notification", side_effect=lambda **kw: saved_notifications.append(kw)), \
+         patch("notifier.storage.get_notification_preferences", return_value={"mode": "todo", "excluded_departments": []}), \
+         patch("notifier.settings.NOTIFICATION_REDIRECT_MODE", "off"):
+        await notify_incident(bot=bot, incident=INCIDENT_INCIDENCIA, employees=EMPLOYEES, reporter_employee=REPORTER)
+
+    failed = [n for n in saved_notifications if n.get("status") == "failed"]
+    assert len(failed) >= 1
+    assert failed[0]["error_message"] is not None
+    assert "Telegram timeout" in failed[0]["error_message"]
