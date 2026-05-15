@@ -39,10 +39,29 @@ def init_db():
                 debug_mode  INTEGER DEFAULT 0
             )
         """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id                           INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp                    TEXT NOT NULL,
+                incident_id                  INTEGER NOT NULL,
+                recipient_telegram_id        INTEGER NOT NULL,
+                recipient_actual_telegram_id INTEGER NOT NULL,
+                redirect_mode                TEXT,
+                status                       TEXT NOT NULL,
+                error_message                TEXT,
+                FOREIGN KEY (incident_id) REFERENCES classifications(id)
+            )
+        """)
         # Add photo_path column if missing (migration for existing DBs)
         cols = [row[1] for row in con.execute("PRAGMA table_info(classifications)").fetchall()]
         if "photo_path" not in cols:
             con.execute("ALTER TABLE classifications ADD COLUMN photo_path TEXT")
+        # Migrations for user_preferences notification columns
+        pref_cols = [row[1] for row in con.execute("PRAGMA table_info(user_preferences)").fetchall()]
+        if "notification_mode" not in pref_cols:
+            con.execute("ALTER TABLE user_preferences ADD COLUMN notification_mode TEXT DEFAULT 'criticas'")
+        if "excluded_departments" not in pref_cols:
+            con.execute("ALTER TABLE user_preferences ADD COLUMN excluded_departments TEXT DEFAULT ''")
 
 
 def get_debug_mode(telegram_id: int) -> bool:
@@ -173,3 +192,95 @@ _DISPLAY_PREFIXES = {
 def generate_display_id(tipo: str, id: int) -> str:
     prefix = _DISPLAY_PREFIXES.get(tipo, "??")
     return f"{prefix}-{id:03d}"
+
+
+def save_notification(
+    incident_id: int,
+    recipient_telegram_id: int,
+    recipient_actual_telegram_id: int,
+    redirect_mode: str,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    init_db()
+    with _conn() as con:
+        con.execute("""
+            INSERT INTO notifications
+            (timestamp, incident_id, recipient_telegram_id, recipient_actual_telegram_id,
+             redirect_mode, status, error_message)
+            VALUES (?,?,?,?,?,?,?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            incident_id,
+            recipient_telegram_id,
+            recipient_actual_telegram_id,
+            redirect_mode,
+            status,
+            error_message,
+        ))
+
+
+def get_notifications_for_incident(incident_id: int) -> list[dict]:
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT * FROM notifications WHERE incident_id = ? ORDER BY timestamp",
+            (incident_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_recent_notifications(limit: int = 50) -> list[dict]:
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT * FROM notifications ORDER BY timestamp DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_notification_preferences(telegram_id: int) -> dict:
+    """Returns {"mode": "criticas", "excluded_departments": [...]}"""
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT notification_mode, excluded_departments FROM user_preferences WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+    if not row:
+        return {"mode": "criticas", "excluded_departments": []}
+    excluded_raw = row["excluded_departments"] or ""
+    excluded = [d.strip() for d in excluded_raw.split(",") if d.strip()]
+    return {"mode": row["notification_mode"] or "criticas", "excluded_departments": excluded}
+
+
+def set_notification_mode(telegram_id: int, mode: str) -> None:
+    init_db()
+    with _conn() as con:
+        con.execute(
+            """INSERT INTO user_preferences (telegram_id, notification_mode)
+               VALUES (?, ?)
+               ON CONFLICT(telegram_id) DO UPDATE SET notification_mode = excluded.notification_mode""",
+            (telegram_id, mode),
+        )
+
+
+def toggle_excluded_department(telegram_id: int, departamento: str) -> bool:
+    """Toggle: si estaba excluido lo quita, si no lo agrega. Devuelve True si quedó excluido."""
+    prefs = get_notification_preferences(telegram_id)
+    excluded = prefs["excluded_departments"]
+    dept_upper = departamento.upper()
+    if dept_upper in excluded:
+        excluded.remove(dept_upper)
+        is_excluded = False
+    else:
+        excluded.append(dept_upper)
+        is_excluded = True
+    with _conn() as con:
+        con.execute(
+            """INSERT INTO user_preferences (telegram_id, excluded_departments)
+               VALUES (?, ?)
+               ON CONFLICT(telegram_id) DO UPDATE SET excluded_departments = excluded.excluded_departments""",
+            (telegram_id, ",".join(excluded)),
+        )
+    return is_excluded
