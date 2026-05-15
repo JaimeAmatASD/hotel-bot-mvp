@@ -10,7 +10,7 @@ from handlers.text_handler import handle_text
 from handlers.audio_handler import handle_audio
 from handlers.photo_handler import handle_photo
 from handlers.callback_handler import handle_callback
-from handlers.command_handler import handle_debug
+from handlers.command_handler import handle_debug, handle_notificaciones
 
 
 def load_employees() -> dict:
@@ -27,6 +27,7 @@ def main():
     app.bot_data["employees"] = employees
 
     app.add_handler(CommandHandler("debug", handle_debug))
+    app.add_handler(CommandHandler("notificaciones", handle_notificaciones))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_audio))
