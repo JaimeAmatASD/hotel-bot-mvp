@@ -95,3 +95,104 @@ comodidad, no seguridad operacional.
 Antes, `save()` retornaba None. Ahora retorna `cur.lastrowid`. Este ID se usa para registrar
 en tabla `notifications` qué incidencia disparó qué notificaciones, permitiendo auditoría
 posterior en SQLite.
+
+## Sprint B.3 — Botones de acción (2026-05-16)
+
+### callback_data complejo: incluir todo lo necesario en el string
+
+Para callbacks de incidencia: `incident_action:{incident_id}:{sub_action}:{actor_telegram_id}`.
+La alternativa (guardar en SQLite + recuperar por incident_id) añade complejidad sin beneficio.
+El string resultante (~40 chars) queda bien por debajo del límite de 64 bytes de Telegram.
+Regla: mientras el callback_data quepa en 64 bytes, preferir Opción A (todo en el string)
+sobre Opción B (tabla auxiliar). Si supera el límite, ahí sí usar tabla.
+
+### Patrón de edición de mensaje original para reflejar cambio de estado
+
+Cuando se pulsa un botón inline, `query.edit_message_text()` edita el mensaje padre.
+Para fotos, usar `query.edit_message_caption()` — detectar con `query.message.photo`.
+Al reformatear el mensaje, recargar la incidencia desde SQLite con `get_incident(id)`
+para obtener los campos actualizados (estado, assigned_at, etc.) y reconstruir el texto.
+Evitar pasar el estado como parámetro por separado — el "single source of truth" es la DB.
+
+### query.answer() y show_alert: no llamar antes del handler de incident_action
+
+Si `query.answer()` se llama al inicio del handler para todos los callbacks,
+no se puede luego llamar `query.answer(text, show_alert=True)` en ese mismo callback_query_id.
+Solución: separar el branch de `incident_action:*` ANTES del `query.answer()` del top.
+El branch de acciones maneja su propio `answer()` — con show_alert en fallos, sin texto en éxito.
+
+### Transiciones inválidas: alert vs error silencioso
+
+Las transiciones imposibles (ej: tomar una incidencia ya CERRADA) se responden con
+`query.answer(reason, show_alert=True)`. El usuario ve un popup con el motivo y el mensaje
+original no se modifica. No se lanza excepción ni se edita el mensaje.
+Regla: en handlers de Telegram, errores de lógica de negocio → alert al usuario;
+errores de infraestructura (red, DB) → log silencioso y return sin modificar estado.
+
+## Sprint B.5 — Trazabilidad y concurrencia (2026-05-17)
+
+### Patrón de eventos append-only para auditoría
+
+La tabla `incident_events` nunca se modifica ni borra — solo INSERTs.
+Esto hace el historial inmutable y confiable. Si algo sale mal en producción,
+el log reconstruye exactamente qué pasó y en qué orden.
+Regla: un audit log no debe tener UPDATE ni DELETE. Si necesitás "corregir" un evento,
+insertá otro con `action="correction"` que referencie al anterior.
+
+### SQLite BEGIN IMMEDIATE para atomic read-modify-write
+
+El patrón correcto en Python sqlite3 para proteger lectura+escritura concurrente:
+```python
+con = sqlite3.connect(str(DB_PATH))
+con.isolation_level = None  # manual transaction control
+con.execute("BEGIN IMMEDIATE")  # bloquea para escritura desde el inicio
+# lectura y escritura en el mismo bloque
+con.execute("COMMIT")
+```
+`BEGIN IMMEDIATE` bloquea el archivo inmediatamente. Otros escritores esperan.
+Lectores sin transacción pueden continuar (WAL mode permite esto).
+Importante: usar `isolation_level=None` — sin esto, Python sqlite3 emite BEGIN automático
+que interfiere con el BEGIN IMMEDIATE manual.
+
+### extra como TEXT JSON en SQLite
+
+Para datos variables por tipo de evento (destinatario de notificación, redirect_mode, etc.):
+`json.dumps(extra or {})` al guardar, `json.loads(row["extra"] or "{}")` al leer.
+Simple, sin migraciones, los eventos viejos con `extra=NULL` no rompen nada.
+Trade-off: no se puede hacer SELECT por campos dentro del JSON sin `json_extract()`.
+Aceptable si los queries sobre `extra` son raros (en este caso lo son).
+
+### test de concurrencia con threading.Barrier
+
+Para testear race conditions sin sleep: `threading.Barrier(2)` sincroniza el arranque
+de ambos threads. Ambos llegan a `barrier.wait()`, se bloquean, y arrancan juntos.
+Esto maximiza la probabilidad de colisión sin depender de timing.
+
+## Sprint B.4 — Comandos de consulta (2026-05-16)
+
+### unknown_command handler: siempre al final
+
+`MessageHandler(filters.COMMAND, unknown_command)` captura cualquier `/comando` no registrado.
+Debe añadirse DESPUÉS de todos los `CommandHandler` específicos, si no, intercepta todo.
+También resuelve el bug de UX donde `/spec` o `/config` se ignoraban silenciosamente.
+
+### Filtrado por departamento en Python, no en SQL
+
+`CATEGORY_TO_DEPARTMENT` mapea categoría→departamento en Python (`permissions.py`).
+Duplicar ese mapeo en SQL (CASE WHEN ...) crea dos fuentes de verdad que se pueden desincronizar.
+Patrón: fetch desde DB con filtros simples (estado, prioridad), luego `filter_visible_incidents()`
++ filtro de departamento en Python. Aceptable para datasets pequeños (<10.000 filas).
+
+### Parsing de argumentos de /abiertas: tipo before valor
+
+Para `/abiertas alta mantenimiento` o `/abiertas mantenimiento alta` en cualquier orden:
+detectar el tipo del arg comparando contra un set conocido de prioridades.
+Lo que no es prioridad → se trata como departamento. Simple, sin posición fija.
+Ventaja: no requiere palabras clave prefijo (dept:, prio:) que complican el UX.
+
+### Tabla de transiciones como dict de bloqueados, no de permitidos
+
+Modelar "qué NO se puede hacer desde este estado" es más mantenible que "qué SÍ se puede",
+porque la mayoría de las transiciones son válidas. Solo los estados finales (CERRADA) y
+las re-transiciones (ASIGNADA→ASIGNADA) están bloqueados. Un estado nuevo solo requiere
+agregar su conjunto de bloqueados al dict, sin tocar las demás reglas.

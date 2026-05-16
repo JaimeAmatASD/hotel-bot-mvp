@@ -52,7 +52,7 @@ EMPLOYEES = {
 
 def test_format_notification_sin_redirect():
     from notifier import format_notification_message
-    msg = format_notification_message(
+    msg, _keyboard = format_notification_message(
         incident=INCIDENT_MANT,
         reporter=REPORTER,
         incident_id_display="INC-042",
@@ -76,7 +76,7 @@ def test_format_notification_sin_redirect():
 
 def test_format_notification_con_redirect():
     from notifier import format_notification_message
-    msg = format_notification_message(
+    msg, _keyboard = format_notification_message(
         incident=INCIDENT_MANT,
         reporter=REPORTER,
         incident_id_display="INC-042",

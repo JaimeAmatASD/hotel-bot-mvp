@@ -4,13 +4,125 @@ from telegram.ext import ContextTypes
 from handlers import get_employee
 from storage import save
 import notifier
+import permissions
+import storage
+
+
+_EXPECTED_FROM = {
+    "tomar":   ["ABIERTA"],
+    "proceso": ["ABIERTA", "ASIGNADA"],
+    "cerrar":  ["ABIERTA", "ASIGNADA", "EN_PROCESO"],
+}
+
+_STATE_MAP = {"tomar": "ASIGNADA", "proceso": "EN_PROCESO", "cerrar": "CERRADA"}
+
+
+async def _handle_incident_action(query, context) -> None:
+    """Handles incident_action:{incident_id}:{sub_action}:{actor_telegram_id} callbacks."""
+    parts = query.data.split(":")
+    if len(parts) != 4:
+        await query.answer("Formato de acción inválido", show_alert=True)
+        return
+
+    _, incident_id_str, sub_action, actor_id_str = parts
+    try:
+        incident_id = int(incident_id_str)
+        actor_telegram_id = int(actor_id_str)
+    except ValueError:
+        await query.answer("Datos de acción inválidos", show_alert=True)
+        return
+
+    employees = context.bot_data["employees"]
+    actor = employees.get(actor_telegram_id)
+    incident = storage.get_incident(incident_id)
+
+    if not actor or not incident:
+        await query.answer("Error interno: datos no encontrados", show_alert=True)
+        return
+
+    if not permissions.can_act_on_incident(actor, incident):
+        storage.save_event(
+            incident_id=incident_id,
+            actor_telegram_id=actor_telegram_id,
+            actor_name=actor.get("nombre"),
+            actor_role=actor.get("rol"),
+            action="action_rejected_no_permission",
+            from_state=incident.get("estado") or "ABIERTA",
+            success=False,
+            reason=f"rol {actor.get('rol')} no tiene permiso sobre {incident.get('categoria')}",
+        )
+        await query.answer("No tenés permisos sobre esta incidencia", show_alert=True)
+        return
+
+    new_state = _STATE_MAP.get(sub_action)
+    if not new_state:
+        await query.answer("Acción desconocida", show_alert=True)
+        return
+
+    result = storage.update_incident_state_atomic(
+        incident_id=incident_id,
+        new_state=new_state,
+        actor=actor,
+        expected_from_states=_EXPECTED_FROM[sub_action],
+    )
+
+    if not result["success"]:
+        await query.answer(result["reason"], show_alert=True)
+        return
+
+    # Reload incident with updated fields
+    updated_incident = storage.get_incident(incident_id)
+
+    # Attach assignee name for display
+    if updated_incident.get("assigned_to_telegram_id"):
+        assignee = employees.get(int(updated_incident["assigned_to_telegram_id"]))
+        if assignee:
+            updated_incident["_assignee_name"] = assignee.get("nombre", "")
+
+    # Find the original reporter for the notification format
+    reporter_name = updated_incident.get("employee_name", "")
+    reporter = next(
+        (emp for emp in employees.values() if emp.get("nombre") == reporter_name),
+        {"nombre": reporter_name, "departamento": updated_incident.get("employee_dept", "")},
+    )
+
+    display_id = storage.generate_display_id("INCIDENCIA", incident_id)
+    msg, keyboard = notifier.format_notification_message(
+        incident=updated_incident,
+        reporter=reporter,
+        incident_id_display=display_id,
+        actual_recipient_telegram_id=actor_telegram_id,
+    )
+
+    try:
+        if query.message.photo:
+            await query.edit_message_caption(caption=msg, reply_markup=keyboard)
+        else:
+            await query.edit_message_text(text=msg, reply_markup=keyboard)
+    except Exception:
+        pass  # message unchanged is not a fatal error
+
+    await notifier.notify_employee_state_change(
+        bot=context.bot,
+        incident=updated_incident,
+        new_state=new_state,
+        actor_name=actor.get("nombre", ""),
+        employees=employees,
+    )
+
+    await query.answer()
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    action = query.data
+
+    if action.startswith("incident_action:"):
+        await _handle_incident_action(query, context)
+        return
+
     await query.answer()
 
-    action = query.data
     pending = context.user_data.get("pending")
 
     if action == "confirm":
@@ -27,6 +139,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"✅ Guardado. Gracias, {nombre}.")
 
         if result.get("tipo") == "INCIDENCIA":
+            storage.save_event(
+                incident_id=incident_id,
+                actor_telegram_id=employee.get("telegram_id", 0),
+                actor_name=employee.get("nombre"),
+                actor_role=employee.get("rol", "EMPLEADO"),
+                action="created",
+                to_state="ABIERTA",
+                success=True,
+            )
             incident = {
                 **result,
                 "id": incident_id,

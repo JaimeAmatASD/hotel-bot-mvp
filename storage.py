@@ -62,6 +62,38 @@ def init_db():
             con.execute("ALTER TABLE user_preferences ADD COLUMN notification_mode TEXT DEFAULT 'criticas'")
         if "excluded_departments" not in pref_cols:
             con.execute("ALTER TABLE user_preferences ADD COLUMN excluded_departments TEXT DEFAULT ''")
+        # incident_events table (append-only audit log)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS incident_events (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp           TEXT NOT NULL,
+                incident_id         INTEGER NOT NULL,
+                actor_telegram_id   INTEGER NOT NULL,
+                actor_name          TEXT,
+                actor_role          TEXT,
+                action              TEXT NOT NULL,
+                from_state          TEXT,
+                to_state            TEXT,
+                success             INTEGER NOT NULL DEFAULT 1,
+                reason              TEXT,
+                extra               TEXT,
+                FOREIGN KEY (incident_id) REFERENCES classifications(id)
+            )
+        """)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_events_incident ON incident_events(incident_id)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON incident_events(timestamp)")
+        # Migrations for incident state tracking
+        cls_cols = [row[1] for row in con.execute("PRAGMA table_info(classifications)").fetchall()]
+        for col, default in [
+            ("estado", "ABIERTA"),
+            ("assigned_to_telegram_id", None),
+            ("assigned_at", None),
+            ("closed_at", None),
+            ("resolution_time_minutes", None),
+        ]:
+            if col not in cls_cols:
+                suffix = f" DEFAULT '{default}'" if default else ""
+                con.execute(f"ALTER TABLE classifications ADD COLUMN {col} TEXT{suffix}")
 
 
 def get_debug_mode(telegram_id: int) -> bool:
@@ -265,6 +297,94 @@ def set_notification_mode(telegram_id: int, mode: str) -> None:
         )
 
 
+def get_incident(incident_id: int) -> dict | None:
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT * FROM classifications WHERE id = ?", (incident_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_incident_state(
+    incident_id: int,
+    new_state: str,
+    actor_telegram_id: int,
+) -> dict:
+    """Aplica transición de estado. Devuelve {success, new_state, reason}."""
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT estado, assigned_to_telegram_id, timestamp FROM classifications WHERE id = ?",
+            (incident_id,),
+        ).fetchone()
+    if not row:
+        return {"success": False, "new_state": None, "reason": "Incidencia no encontrada"}
+
+    current = row["estado"] or "ABIERTA"
+
+    # Transition validity: states that cannot be reached from the current one
+    invalid = {
+        "ASIGNADA":   {"ASIGNADA"},
+        "EN_PROCESO": {"ASIGNADA", "EN_PROCESO"},
+        "CERRADA":    {"ASIGNADA", "EN_PROCESO", "CERRADA"},
+    }
+    blocked = invalid.get(current, set())
+    if new_state in blocked:
+        return {
+            "success": False,
+            "new_state": current,
+            "reason": f"La incidencia ya está en estado {current}",
+        }
+
+    now = datetime.now().isoformat(timespec="seconds")
+    with _conn() as con:
+        if new_state == "ASIGNADA":
+            con.execute(
+                "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, assigned_at=? WHERE id=?",
+                ("ASIGNADA", actor_telegram_id, now, incident_id),
+            )
+        elif new_state == "EN_PROCESO":
+            # Assign actor if not already assigned
+            assign_id = row["assigned_to_telegram_id"] or actor_telegram_id
+            assign_at = now if not row["assigned_to_telegram_id"] else None
+            if assign_at:
+                con.execute(
+                    "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, assigned_at=? WHERE id=?",
+                    ("EN_PROCESO", assign_id, assign_at, incident_id),
+                )
+            else:
+                con.execute(
+                    "UPDATE classifications SET estado=? WHERE id=?",
+                    ("EN_PROCESO", incident_id),
+                )
+        elif new_state == "CERRADA":
+            created_at = row["timestamp"]
+            try:
+                created_dt = datetime.fromisoformat(created_at)
+                resolution_minutes = int((datetime.now() - created_dt).total_seconds() / 60)
+            except Exception:
+                resolution_minutes = None
+            con.execute(
+                "UPDATE classifications SET estado=?, closed_at=?, resolution_time_minutes=? WHERE id=?",
+                ("CERRADA", now, resolution_minutes, incident_id),
+            )
+
+    return {"success": True, "new_state": new_state, "reason": None}
+
+
+def get_incident_assignee(incident_id: int) -> dict | None:
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT assigned_to_telegram_id FROM classifications WHERE id = ?",
+            (incident_id,),
+        ).fetchone()
+    if not row or not row["assigned_to_telegram_id"]:
+        return None
+    return {"telegram_id": row["assigned_to_telegram_id"]}
+
+
 def toggle_excluded_department(telegram_id: int, departamento: str) -> bool:
     """Toggle: si estaba excluido lo quita, si no lo agrega. Devuelve True si quedó excluido."""
     prefs = get_notification_preferences(telegram_id)
@@ -284,3 +404,250 @@ def toggle_excluded_department(telegram_id: int, departamento: str) -> bool:
             (telegram_id, ",".join(excluded)),
         )
     return is_excluded
+
+
+_PRIORITY_ORDER = "CASE prioridad WHEN 'CRITICA' THEN 1 WHEN 'ALTA' THEN 2 WHEN 'MEDIA' THEN 3 WHEN 'BAJA' THEN 4 ELSE 5 END"
+
+
+def get_open_incidents(prioridad: str | None = None, limit: int = 100) -> list[dict]:
+    init_db()
+    params: list = []
+    where = "tipo = 'INCIDENCIA' AND (estado IS NULL OR estado IN ('ABIERTA', 'ASIGNADA', 'EN_PROCESO'))"
+    if prioridad:
+        where += " AND prioridad = ?"
+        params.append(prioridad.upper())
+    params.append(limit)
+    with _conn() as con:
+        rows = con.execute(
+            f"SELECT * FROM classifications WHERE {where} ORDER BY {_PRIORITY_ORDER} ASC, timestamp ASC LIMIT ?",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_incidents_for_room(room_or_zone: str, days_back: int = 30) -> list[dict]:
+    init_db()
+    since = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    from datetime import timedelta
+    since -= timedelta(days=days_back)
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT * FROM classifications
+               WHERE tipo = 'INCIDENCIA'
+                 AND LOWER(ubicacion) LIKE LOWER(?)
+                 AND timestamp >= ?
+               ORDER BY timestamp DESC""",
+            (f"%{room_or_zone}%", since.isoformat()),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_guest_intel_for_room(room: str, days_back: int = 30) -> list[dict]:
+    init_db()
+    from datetime import timedelta
+    since = (datetime.now() - timedelta(days=days_back)).isoformat(timespec="seconds")
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT * FROM classifications
+               WHERE tipo = 'GUEST_INTEL'
+                 AND LOWER(ubicacion) LIKE LOWER(?)
+                 AND timestamp >= ?
+               ORDER BY timestamp DESC""",
+            (f"%{room}%", since),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_observations_for_room(room_or_zone: str, days_back: int = 30) -> list[dict]:
+    init_db()
+    from datetime import timedelta
+    since = (datetime.now() - timedelta(days=days_back)).isoformat(timespec="seconds")
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT * FROM classifications
+               WHERE tipo = 'OBSERVACION'
+                 AND LOWER(ubicacion) LIKE LOWER(?)
+                 AND timestamp >= ?
+               ORDER BY timestamp DESC""",
+            (f"%{room_or_zone}%", since),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def search_classifications(query: str, days_back: int = 90, limit: int = 10) -> list[dict]:
+    init_db()
+    from datetime import timedelta
+    since = (datetime.now() - timedelta(days=days_back)).isoformat(timespec="seconds")
+    pattern = f"%{query}%"
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT * FROM classifications
+               WHERE timestamp >= ?
+                 AND (LOWER(message) LIKE LOWER(?)
+                   OR LOWER(descripcion) LIKE LOWER(?)
+                   OR LOWER(ubicacion) LIKE LOWER(?))
+               ORDER BY timestamp DESC
+               LIMIT ?""",
+            (since, pattern, pattern, pattern, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Event log
+# ---------------------------------------------------------------------------
+
+_ACTION_FROM_STATE = {"ASIGNADA": "tomar", "EN_PROCESO": "en_proceso", "CERRADA": "cerrar"}
+
+
+def save_event(
+    incident_id: int,
+    actor_telegram_id: int,
+    action: str,
+    actor_name: str | None = None,
+    actor_role: str | None = None,
+    from_state: str | None = None,
+    to_state: str | None = None,
+    success: bool = True,
+    reason: str | None = None,
+    extra: dict | None = None,
+) -> int:
+    init_db()
+    extra_json = json.dumps(extra, ensure_ascii=False) if extra else None
+    with _conn() as con:
+        cur = con.execute(
+            """INSERT INTO incident_events
+               (timestamp, incident_id, actor_telegram_id, actor_name, actor_role,
+                action, from_state, to_state, success, reason, extra)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                datetime.now().isoformat(timespec="seconds"),
+                incident_id, actor_telegram_id, actor_name, actor_role,
+                action, from_state, to_state, int(success), reason, extra_json,
+            ),
+        )
+        return cur.lastrowid
+
+
+def get_events_for_incident(incident_id: int) -> list[dict]:
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY timestamp ASC, id ASC",
+            (incident_id,),
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        if d.get("extra"):
+            try:
+                d["extra"] = json.loads(d["extra"])
+            except Exception:
+                pass
+        result.append(d)
+    return result
+
+
+def update_incident_state_atomic(
+    incident_id: int,
+    new_state: str,
+    actor: dict,
+    expected_from_states: list[str],
+) -> dict:
+    """Atomic read-modify-write using BEGIN IMMEDIATE. Registers event in same transaction."""
+    init_db()
+    actor_tid = actor.get("telegram_id", 0)
+    actor_name = actor.get("nombre")
+    actor_role = actor.get("rol", "EMPLEADO")
+    action_name = _ACTION_FROM_STATE.get(new_state, new_state.lower())
+
+    DB_PATH.parent.mkdir(exist_ok=True)
+    con = sqlite3.connect(str(DB_PATH))
+    con.row_factory = sqlite3.Row
+    con.isolation_level = None  # manual transaction control
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT estado, assigned_to_telegram_id, timestamp FROM classifications WHERE id = ?",
+            (incident_id,),
+        ).fetchone()
+
+        if not row:
+            con.execute("ROLLBACK")
+            return {"success": False, "from_state": None, "to_state": None, "reason": "Incidencia no encontrada"}
+
+        current = row["estado"] or "ABIERTA"
+        now = datetime.now().isoformat(timespec="seconds")
+
+        if current not in expected_from_states:
+            con.execute(
+                """INSERT INTO incident_events
+                   (timestamp, incident_id, actor_telegram_id, actor_name, actor_role,
+                    action, from_state, to_state, success, reason)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (now, incident_id, actor_tid, actor_name, actor_role,
+                 "action_rejected_already_done", current, None, 0,
+                 f"La incidencia ya está en estado {current}"),
+            )
+            con.execute("COMMIT")
+            return {
+                "success": False,
+                "from_state": current,
+                "to_state": current,
+                "reason": f"La incidencia ya está en estado {current}",
+            }
+
+        # Apply the state transition
+        if new_state == "ASIGNADA":
+            con.execute(
+                "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, assigned_at=? WHERE id=?",
+                ("ASIGNADA", actor_tid, now, incident_id),
+            )
+        elif new_state == "EN_PROCESO":
+            assign_id = row["assigned_to_telegram_id"] or actor_tid
+            if not row["assigned_to_telegram_id"]:
+                con.execute(
+                    "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, assigned_at=? WHERE id=?",
+                    ("EN_PROCESO", assign_id, now, incident_id),
+                )
+            else:
+                con.execute("UPDATE classifications SET estado=? WHERE id=?", ("EN_PROCESO", incident_id))
+        elif new_state == "CERRADA":
+            try:
+                created_dt = datetime.fromisoformat(row["timestamp"])
+                resolution_minutes = int((datetime.now() - created_dt).total_seconds() / 60)
+            except Exception:
+                resolution_minutes = None
+            con.execute(
+                "UPDATE classifications SET estado=?, closed_at=?, resolution_time_minutes=? WHERE id=?",
+                ("CERRADA", now, resolution_minutes, incident_id),
+            )
+
+        # Register success event
+        con.execute(
+            """INSERT INTO incident_events
+               (timestamp, incident_id, actor_telegram_id, actor_name, actor_role,
+                action, from_state, to_state, success)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (now, incident_id, actor_tid, actor_name, actor_role,
+             action_name, current, new_state, 1),
+        )
+        con.execute("COMMIT")
+        return {"success": True, "from_state": current, "to_state": new_state, "reason": None}
+
+    except Exception as e:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+        return {"success": False, "from_state": None, "to_state": None, "reason": str(e)}
+    finally:
+        con.close()
+
+
+def get_incident_with_events(incident_id: int) -> dict | None:
+    incident = get_incident(incident_id)
+    if not incident:
+        return None
+    incident["events"] = get_events_for_incident(incident_id)
+    return incident

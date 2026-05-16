@@ -3,26 +3,58 @@
     {
       "telegram_id": 7391337590,
       "nombre": "Jaime A",
-      "departamento": "Spa",
-      "idioma": "es"
+      "departamento": "SPA",
+      "idioma": "es",
+      "rol": "ENCARGADO"
     },
     {
       "telegram_id": 111111111,
       "nombre": "María García",
       "departamento": "HOUSEKEEPING",
-      "idioma": "es"
+      "idioma": "es",
+      "rol": "EMPLEADO"
     },
     {
       "telegram_id": 222222222,
       "nombre": "Andrei Popescu",
       "departamento": "MANTENIMIENTO",
-      "idioma": "ro"
+      "idioma": "ro",
+      "rol": "EMPLEADO"
     },
     {
       "telegram_id": 333333333,
       "nombre": "James Smith",
       "departamento": "RECEPCION",
-      "idioma": "en"
+      "idioma": "en",
+      "rol": "EMPLEADO"
+    },
+    {
+      "telegram_id": 444444444,
+      "nombre": "Carlos Encargado Mant",
+      "departamento": "MANTENIMIENTO",
+      "idioma": "es",
+      "rol": "ENCARGADO"
+    },
+    {
+      "telegram_id": 555555555,
+      "nombre": "Laura Encargada HK",
+      "departamento": "HOUSEKEEPING",
+      "idioma": "es",
+      "rol": "ENCARGADO"
+    },
+    {
+      "telegram_id": 666666666,
+      "nombre": "Sofía Encargada Recepción",
+      "departamento": "RECEPCION",
+      "idioma": "es",
+      "rol": "ENCARGADO"
+    },
+    {
+      "telegram_id": 777777777,
+      "nombre": "Alfredo Gerente",
+      "departamento": "GENERAL",
+      "idioma": "es",
+      "rol": "GERENTE_GENERAL"
     }
   ]
 }

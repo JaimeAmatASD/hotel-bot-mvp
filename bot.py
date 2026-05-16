@@ -10,7 +10,10 @@ from handlers.text_handler import handle_text
 from handlers.audio_handler import handle_audio
 from handlers.photo_handler import handle_photo
 from handlers.callback_handler import handle_callback
-from handlers.command_handler import handle_debug, handle_notificaciones
+from handlers.command_handler import (
+    handle_debug, handle_notificaciones,
+    handle_abiertas, handle_hab, handle_buscar, handle_help, handle_historial,
+)
 
 
 def load_employees() -> dict:
@@ -28,10 +31,21 @@ def main():
 
     app.add_handler(CommandHandler("debug", handle_debug))
     app.add_handler(CommandHandler("notificaciones", handle_notificaciones))
+    app.add_handler(CommandHandler("abiertas", handle_abiertas))
+    app.add_handler(CommandHandler("hab", handle_hab))
+    app.add_handler(CommandHandler("buscar", handle_buscar))
+    app.add_handler(CommandHandler("help", handle_help))
+    app.add_handler(CommandHandler("historial", handle_historial))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_audio))
     app.add_handler(CallbackQueryHandler(handle_callback))
+
+    async def unknown_command(update, context):
+        await update.message.reply_text(
+            "❓ Ese comando no existe. Mandá /help para ver los disponibles."
+        )
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     print("Bot iniciado. Ctrl+C para detener.")
     app.run_polling()

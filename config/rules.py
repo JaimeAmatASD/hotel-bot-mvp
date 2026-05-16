@@ -42,6 +42,17 @@ def is_location_complete(ubicacion: str | None) -> bool:
     return False
 
 
+CATEGORY_TO_DEPARTMENT = {
+    "MANTENIMIENTO": "MANTENIMIENTO",
+    "LIMPIEZA": "HOUSEKEEPING",
+    "RECEPCION": "RECEPCION",
+    "RESTAURANTE": "RESTAURANTE",
+    "SPA": "SPA",
+    "JARDINERIA": "JARDINERIA",
+    "OTRO": "GENERAL",
+}
+
+
 def get_critical_field(tipo: str, campos_faltantes: list) -> str | None:
     """Returns canonical critical field name if any campos_faltantes matches, else None.
     Uses substring matching so 'número de habitación' matches 'habitacion'."""
