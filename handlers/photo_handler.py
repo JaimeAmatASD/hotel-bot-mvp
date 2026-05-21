@@ -6,6 +6,8 @@ from brain import process_message
 from handlers import get_employee, format_summary, format_summary_with_warning, format_debug_block, CONFIRM_KEYBOARD
 from config.rules import CORRECTION_TIMEOUT_MINUTES
 from storage import get_debug_mode
+import storage
+import report_processor
 
 
 def _pop_followup_state(context) -> tuple[dict | None, bool]:
@@ -50,7 +52,31 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ No estás registrado. Contactá al administrador.")
         return
 
-    debug_mode = get_debug_mode(update.effective_user.id)
+    tid = update.effective_user.id
+
+    # Download photo first (needed for both report mode and normal mode)
+    photo = update.message.photo[-1]
+    photos_dir = Path("data/photos") / str(tid)
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    photo_path = photos_dir / f"{timestamp}_{photo.file_id[:12]}.jpg"
+    file = await context.bot.get_file(photo.file_id)
+    await file.download_to_drive(str(photo_path))
+
+    caption = update.message.caption or ""
+
+    open_report = storage.get_open_report_for_employee(tid)
+    if open_report:
+        if report_processor.is_close_keyword(caption):
+            from handlers.text_handler import _do_report_close
+            await _do_report_close(update, context, open_report, employee)
+            return
+        storage.add_message_to_report(open_report["id"], "photo", caption or "", photo_path=str(photo_path))
+        await update.message.reply_text("✓ anotado")
+        return
+
+    # Normal flow
+    debug_mode = get_debug_mode(tid)
 
     previous_context, timed_out = _pop_followup_state(context)
     if previous_context is None and not timed_out:
@@ -62,19 +88,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await update.message.reply_text("📸 Procesando foto...")
-
-    # Download highest-resolution photo
-    photo = update.message.photo[-1]
-    tid = update.effective_user.id
-    photos_dir = Path("data/photos") / str(tid)
-    photos_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    photo_path = photos_dir / f"{timestamp}_{photo.file_id[:12]}.jpg"
-
-    file = await context.bot.get_file(photo.file_id)
-    await file.download_to_drive(str(photo_path))
-
-    caption = update.message.caption or ""
 
     result = process_message(
         caption,

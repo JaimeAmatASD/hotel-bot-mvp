@@ -6,6 +6,7 @@ from storage import save
 import notifier
 import permissions
 import storage
+import report_processor
 
 
 _EXPECTED_FROM = {
@@ -113,12 +114,57 @@ async def _handle_incident_action(query, context) -> None:
     await query.answer()
 
 
+async def _handle_report_confirm(query, context) -> None:
+    report_id = int(query.data.split(":")[1])
+    pending = context.user_data.get("pending_report", {})
+    items = pending.get("items", [])
+    employees = context.bot_data["employees"]
+    tid = query.from_user.id
+    employee = employees.get(tid) or {"nombre": "", "departamento": "", "telegram_id": tid}
+
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if items:
+        await report_processor.save_confirmed_report_items(report_id, items, employee, employees, context.bot)
+    storage.close_report(report_id, "manual")
+    context.user_data.pop("pending_report", None)
+
+    display_id = storage.generate_display_id("REPORT", report_id)
+    nombre = employee.get("nombre", "").split()[0] or "empleado"
+    saved = len([i for i in items if i["result"].get("tipo") not in ("ERROR", None)])
+    await query.answer()
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=f"✅ Guardado. Gracias, {nombre}. {display_id} con {saved} ítem{'s' if saved != 1 else ''} registrado{'s' if saved != 1 else ''}.",
+    )
+
+
+async def _handle_report_correct_start(query, context) -> None:
+    report_id = int(query.data.split(":")[1])
+    context.user_data["awaiting_report_correction"] = True
+    await query.answer()
+    await query.edit_message_reply_markup(reply_markup=None)
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text='✏️ Decime qué corregir. Podés decirme "rehacer todo" para empezar de cero, '
+             'o describir la corrección y reproceso el resumen.',
+    )
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     action = query.data
 
     if action.startswith("incident_action:"):
         await _handle_incident_action(query, context)
+        return
+
+    if action.startswith("report_confirm_all:"):
+        await _handle_report_confirm(query, context)
+        return
+
+    if action.startswith("report_correct:"):
+        await _handle_report_correct_start(query, context)
         return
 
     await query.answer()

@@ -82,6 +82,37 @@ def init_db():
         """)
         con.execute("CREATE INDEX IF NOT EXISTS idx_events_incident ON incident_events(incident_id)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON incident_events(timestamp)")
+        # reports table
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS reports (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_telegram_id INTEGER NOT NULL,
+                employee_name        TEXT,
+                employee_department  TEXT,
+                started_at           TEXT NOT NULL,
+                closed_at            TEXT,
+                closure_type         TEXT,
+                status               TEXT NOT NULL
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS report_messages (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id    INTEGER NOT NULL,
+                timestamp    TEXT NOT NULL,
+                message_type TEXT NOT NULL,
+                content      TEXT,
+                photo_path   TEXT,
+                FOREIGN KEY (report_id) REFERENCES reports(id)
+            )
+        """)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_reports_employee ON reports(employee_telegram_id)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_report_messages_report ON report_messages(report_id)")
+        # Migrations for classifications: report_id column
+        cls_cols2 = [row[1] for row in con.execute("PRAGMA table_info(classifications)").fetchall()]
+        if "report_id" not in cls_cols2:
+            con.execute("ALTER TABLE classifications ADD COLUMN report_id INTEGER REFERENCES reports(id)")
         # Migrations for incident state tracking
         cls_cols = [row[1] for row in con.execute("PRAGMA table_info(classifications)").fetchall()]
         for col, default in [
@@ -218,6 +249,7 @@ _DISPLAY_PREFIXES = {
     "OBSERVACION": "OBS",
     "GUEST_INTEL": "MEM",
     "NO_REPORTE": "NR",
+    "REPORT": "REP",
 }
 
 
@@ -651,3 +683,106 @@ def get_incident_with_events(incident_id: int) -> dict | None:
         return None
     incident["events"] = get_events_for_incident(incident_id)
     return incident
+
+
+# ---------------------------------------------------------------------------
+# Report storage
+# ---------------------------------------------------------------------------
+
+def open_report(employee: dict) -> int:
+    """Creates or returns existing OPEN report for this employee."""
+    init_db()
+    tid = employee.get("telegram_id", 0)
+    existing = get_open_report_for_employee(tid)
+    if existing:
+        return existing["id"]
+    with _conn() as con:
+        cur = con.execute(
+            """INSERT INTO reports (employee_telegram_id, employee_name, employee_department, started_at, status)
+               VALUES (?,?,?,?,?)""",
+            (tid, employee.get("nombre"), employee.get("departamento"),
+             datetime.now().isoformat(timespec="seconds"), "OPEN"),
+        )
+        return cur.lastrowid
+
+
+def get_open_report_for_employee(telegram_id: int) -> dict | None:
+    init_db()
+    with _conn() as con:
+        row = con.execute(
+            "SELECT * FROM reports WHERE employee_telegram_id = ? AND status = 'OPEN' ORDER BY started_at DESC LIMIT 1",
+            (telegram_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def add_message_to_report(
+    report_id: int,
+    message_type: str,
+    content: str | None,
+    photo_path: str | None = None,
+) -> int:
+    init_db()
+    with _conn() as con:
+        cur = con.execute(
+            "INSERT INTO report_messages (report_id, timestamp, message_type, content, photo_path) VALUES (?,?,?,?,?)",
+            (report_id, datetime.now().isoformat(timespec="seconds"), message_type, content, photo_path),
+        )
+        return cur.lastrowid
+
+
+def get_report_messages(report_id: int) -> list[dict]:
+    init_db()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT * FROM report_messages WHERE report_id = ? ORDER BY timestamp ASC, id ASC",
+            (report_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def close_report(report_id: int, closure_type: str = "manual") -> None:
+    init_db()
+    with _conn() as con:
+        con.execute(
+            "UPDATE reports SET status='CLOSED', closed_at=?, closure_type=? WHERE id=?",
+            (datetime.now().isoformat(timespec="seconds"), closure_type, report_id),
+        )
+
+
+def get_report_with_items(report_id: int) -> dict | None:
+    init_db()
+    with _conn() as con:
+        row = con.execute("SELECT * FROM reports WHERE id = ?", (report_id,)).fetchone()
+    if not row:
+        return None
+    report = dict(row)
+    report["messages"] = get_report_messages(report_id)
+    with _conn() as con:
+        items = con.execute(
+            "SELECT * FROM classifications WHERE report_id = ? ORDER BY timestamp ASC",
+            (report_id,),
+        ).fetchall()
+    report["items"] = [dict(r) for r in items]
+    return report
+
+
+def link_classification_to_report(classification_id: int, report_id: int) -> None:
+    init_db()
+    with _conn() as con:
+        con.execute(
+            "UPDATE classifications SET report_id = ? WHERE id = ?",
+            (report_id, classification_id),
+        )
+
+
+def get_expired_open_reports(timeout_hours: int = 12) -> list[dict]:
+    init_db()
+    from datetime import timedelta
+    cutoff = (datetime.now() - timedelta(hours=timeout_hours)).isoformat(timespec="seconds")
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT * FROM reports WHERE status = 'OPEN' AND started_at <= ?",
+            (cutoff,),
+        ).fetchall()
+    return [dict(r) for r in rows]

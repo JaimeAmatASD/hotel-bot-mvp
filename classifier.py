@@ -133,7 +133,10 @@ def classify(
 
     text = response.text
     try:
-        return json.loads(text)
+        data = json.loads(text)
+        if isinstance(data, list) and data:
+            return data[0]
+        return data
     except json.JSONDecodeError:
         start = text.find("{")
         end = text.rfind("}") + 1

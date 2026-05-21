@@ -129,6 +129,35 @@ original no se modifica. No se lanza excepción ni se edita el mensaje.
 Regla: en handlers de Telegram, errores de lógica de negocio → alert al usuario;
 errores de infraestructura (red, DB) → log silencioso y return sin modificar estado.
 
+## Sprint B.5-reportes — Reportes acumulativos de turno (2026-05-20)
+
+### Keyword detection: normalizar antes de comparar
+`unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode()` elimina tildes.
+Hacer esto tanto al texto del usuario como a los keywords del config, y comparar con `in`
+(no `==`) para detectar la keyword dentro de un mensaje más largo.
+
+### Orden de chequeos en los handlers importa
+En modo reporte, la verificación de reporte abierto va ANTES de followup/correction.
+Si no, un mensaje normal durante modo reporte podría matchear el estado de corrección
+pendiente y procesarse incorrectamente. Regla: el estado más específico (reporte abierto)
+tiene prioridad sobre el estado más general (followup/correction).
+
+### Audio en modo reporte: solo transcribir, no clasificar
+Llamar `transcriber.transcribe(path, language)` directamente en vez de `brain.process_message`.
+Esto evita consumir tokens del clasificador para mensajes que quizás no se confirmen.
+La clasificación ocurre solo al cerrar el reporte, cuando el empleado ya decidió qué guardar.
+
+### JobQueue en python-telegram-bot v20
+`app.job_queue.run_repeating(callback, interval=seconds, first=seconds)`.
+El callback recibe `context` con `context.bot` y `context.bot_data`.
+El `first` es el delay inicial antes de la primera ejecución — poner 60s para no ejecutar
+inmediatamente al arrancar.
+
+### Diseño extensible para timeout
+`REPORT_TIMEOUT_HOURS = 12` en `config/settings.py` como constante nombrada.
+No hardcodear el valor en el JobQueue ni en la función de expiración.
+Post-piloto: leer de tabla de configuración por hotel/empleado.
+
 ## Sprint B.5 — Trazabilidad y concurrencia (2026-05-17)
 
 ### Patrón de eventos append-only para auditoría

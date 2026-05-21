@@ -7,6 +7,9 @@ from brain import process_message
 from handlers import get_employee, format_summary, format_summary_with_warning, format_debug_block, CONFIRM_KEYBOARD
 from config.rules import CORRECTION_TIMEOUT_MINUTES
 from storage import get_debug_mode
+from transcriber import transcribe
+import storage
+import report_processor
 
 
 def _pop_followup_state(context) -> tuple[dict | None, bool]:
@@ -51,8 +54,36 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ No estás registrado. Contactá al administrador.")
         return
 
-    # Followup (bot-initiated) has priority over correction (user-initiated)
-    debug_mode = get_debug_mode(update.effective_user.id)
+    tid = update.effective_user.id
+    audio = update.message.voice or update.message.audio
+    if not audio:
+        return
+
+    open_report = storage.get_open_report_for_employee(tid)
+    if open_report:
+        # In report mode: transcribe only, no classify
+        await update.message.reply_text("🎧 Transcribiendo...")
+        file = await context.bot.get_file(audio.file_id)
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            await file.download_to_drive(tmp_path)
+            result = transcribe(tmp_path, language=employee.get("idioma"))
+            text_content = result.get("text", "")
+        finally:
+            os.unlink(tmp_path)
+
+        if report_processor.is_close_keyword(text_content):
+            from handlers.text_handler import _do_report_close
+            await _do_report_close(update, context, open_report, employee)
+            return
+
+        storage.add_message_to_report(open_report["id"], "audio", text_content or "[audio sin transcripción]")
+        await update.message.reply_text("✓ anotado")
+        return
+
+    # Normal flow
+    debug_mode = get_debug_mode(tid)
 
     previous_context, timed_out = _pop_followup_state(context)
     if previous_context is None and not timed_out:
@@ -62,10 +93,6 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "⏱ Pasó mucho tiempo desde la corrección anterior, lo proceso como mensaje nuevo."
         )
-
-    audio = update.message.voice or update.message.audio
-    if not audio:
-        return
 
     await update.message.reply_text("🎧 Procesando audio...")
 

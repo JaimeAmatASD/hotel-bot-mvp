@@ -10,6 +10,7 @@ from permissions import get_role, filter_visible_incidents, can_query_department
 from handlers import (
     format_incident_list, format_room_view, get_help_text, format_incident_history,
 )
+import report_processor
 
 
 async def handle_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -181,6 +182,104 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = user.get("rol", "EMPLEADO") if user else "EMPLEADO"
     department = user.get("departamento") if user else None
     await update.message.reply_text(get_help_text(role, department))
+
+
+async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tid = update.effective_user.id
+    employees = context.bot_data.get("employees", {})
+    user = employees.get(tid)
+    args = context.args or []
+
+    if args:
+        # /reporte REP-N → show report view
+        raw = args[0].upper().removeprefix("REP-")
+        try:
+            report_id = int(raw)
+        except ValueError:
+            await update.message.reply_text("ID inválido. Usá formato REP-N o un número.")
+            return
+        report = storage.get_report_with_items(report_id)
+        if not report:
+            await update.message.reply_text(f"No encontré REP-{report_id}.")
+            return
+        # Permission: employee sees only own reports
+        if user:
+            role = user.get("rol", "EMPLEADO")
+            if role == "EMPLEADO" and report.get("employee_telegram_id") != tid:
+                await update.message.reply_text("No tenés permiso para ver ese reporte.")
+                return
+            if role == "ENCARGADO":
+                report_dept = report.get("employee_department")
+                if report_dept and report_dept != user.get("departamento"):
+                    await update.message.reply_text("No tenés permiso para ver ese reporte.")
+                    return
+        lines = [
+            f"📋 REP-{report_id} — {report.get('employee_name', '')}",
+            f"Abierto: {report.get('started_at', '')[:16]}",
+            f"Estado: {report.get('status', '')}",
+            f"Ítems guardados: {len(report.get('items', []))}",
+            f"Mensajes acumulados: {len(report.get('messages', []))}",
+        ]
+        for item in report.get("items", []):
+            tipo = item.get("tipo", "")
+            desc = item.get("descripcion", "")[:60]
+            lines.append(f"  • {tipo}: {desc}")
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    # /reporte sin args → open or warn
+    open_rep = storage.get_open_report_for_employee(tid)
+    if open_rep:
+        msg_count = len(storage.get_report_messages(open_rep["id"]))
+        await update.message.reply_text(
+            f"Ya tenés un reporte abierto con {msg_count} ítem{'s' if msg_count != 1 else ''}. "
+            f"Mandame contenido o /fin para cerrarlo."
+        )
+        return
+    if not user:
+        await update.message.reply_text("❌ No estás registrado.")
+        return
+    report_id = storage.open_report(user)
+    context.user_data["open_report_id"] = report_id
+    await update.message.reply_text(
+        "📋 Modo reporte abierto.\n\n"
+        "Mandame todo lo del turno: incidencias, notas de huéspedes, observaciones. "
+        "Texto, audio o foto. Puedo recibir muchos mensajes.\n\n"
+        "Cuando termines, mandá /fin o decime \"cierre de reporte\"."
+    )
+
+
+async def handle_fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tid = update.effective_user.id
+    employees = context.bot_data.get("employees", {})
+    user = employees.get(tid)
+
+    open_rep = storage.get_open_report_for_employee(tid)
+    if not open_rep:
+        await update.message.reply_text(
+            "No tenés ningún reporte abierto. Mandá /reporte para iniciar uno."
+        )
+        return
+
+    report_id = open_rep["id"]
+    msg_count = len(storage.get_report_messages(report_id))
+
+    if msg_count == 0:
+        storage.close_report(report_id, "manual")
+        context.user_data.pop("open_report_id", None)
+        await update.message.reply_text("📋 Reporte cerrado (sin ítems).")
+        return
+
+    await update.message.reply_text(
+        f"📋 Procesando tu reporte... Voy a clasificar {msg_count} ítem{'s' if msg_count != 1 else ''}."
+    )
+
+    employee = user or {"nombre": "", "departamento": "", "telegram_id": tid}
+    decomposed = await report_processor.process_report_at_closure(report_id, employee, employees)
+    context.user_data["pending_report"] = {"report_id": report_id, "items": decomposed["all_items"]}
+    context.user_data.pop("open_report_id", None)
+    summary_text, keyboard = report_processor.format_report_summary(open_rep, decomposed, employee)
+    await update.message.reply_text(summary_text, reply_markup=keyboard)
 
 
 async def handle_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
