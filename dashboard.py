@@ -2,7 +2,7 @@ import json
 import os
 import streamlit as st
 import pandas as pd
-from classifier import classify, client, SYSTEM_PROMPT
+from classifier import classify, _get_client, SYSTEM_PROMPT
 from google.genai import types
 from test_cases import TEST_CASES
 import storage
@@ -211,7 +211,7 @@ Datos del empleado:
 Escribe el informe en español, tono profesional pero directo."""
 
                 with st.spinner("Generando informe..."):
-                    response = client.models.generate_content(
+                    response = _get_client().models.generate_content(
                         model="gemini-2.5-flash",
                         contents=prompt,
                         config=types.GenerateContentConfig(
@@ -246,7 +246,7 @@ Datos del equipo:
 Escribe en español, tono ejecutivo, para que el gerente lo lea en 2 minutos."""
 
                 with st.spinner("Generando informe..."):
-                    response = client.models.generate_content(
+                    response = _get_client().models.generate_content(
                         model="gemini-2.5-flash",
                         contents=prompt,
                         config=types.GenerateContentConfig(

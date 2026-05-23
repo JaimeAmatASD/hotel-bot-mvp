@@ -270,3 +270,28 @@ Modelar "qué NO se puede hacer desde este estado" es más mantenible que "qué 
 porque la mayoría de las transiciones son válidas. Solo los estados finales (CERRADA) y
 las re-transiciones (ASIGNADA→ASIGNADA) están bloqueados. Un estado nuevo solo requiere
 agregar su conjunto de bloqueados al dict, sin tocar las demás reglas.
+
+## Sprint B.5.1 — Hardening
+
+### L-H1: Identidad del actor en callbacks de Telegram
+
+El actor de una acción en un bot de Telegram SIEMPRE debe provenir de `query.from_user.id`.
+Nunca embeber el ID del actor en `callback_data` — ese dato viene del cliente y puede ser
+manipulado con un cliente modificado. El `callback_data` solo debe llevar identidad de
+*objetos* (IDs de incidencias, tipos de acción), nunca del *sujeto* (quién actúa).
+
+### L-H2: Init-time vs call-time en módulos Python
+
+Los imports de módulos que leen `os.environ[...]` (con corchetes) explotan en import-time
+si falta la variable de entorno. El patrón correcto es lazy init: variable global a `None`
++ función `_get_client()` que inicializa on-demand con un error controlado. Ver
+`transcriber.py` como referencia canónica del patrón.
+
+### L-H3: Tests con efectos externos en import-time
+
+Todo código con efectos externos (llamadas a APIs, I/O real) debe vivir dentro de funciones
+`test_*`, no a nivel de módulo. Pytest importa los archivos `test_*.py` durante la fase de
+collection — código a nivel de módulo con efectos externos se ejecuta aunque no se pidan
+esos tests, aumentando latencia y costo en cada corrida de la suite. Usar
+`@pytest.mark.integration` + `addopts = -m "not integration"` en pytest.ini para aislar
+estos tests de la suite default.

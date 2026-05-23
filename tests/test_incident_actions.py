@@ -39,6 +39,9 @@ def _seed_incident(con, tipo="INCIDENCIA", categoria="Sanitarios", estado="ABIER
 
 class TestStorageTransitions(unittest.TestCase):
 
+    ACTOR = {"telegram_id": 444444444, "nombre": "Carlos Encargado Mant", "rol": "ENCARGADO"}
+    ACTOR_B = {"telegram_id": 777777777, "nombre": "Alfredo Gerente", "rol": "GERENTE_GENERAL"}
+
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = Path(self.tmpdir) / "test.db"
@@ -56,9 +59,9 @@ class TestStorageTransitions(unittest.TestCase):
     # 1. Tomar incidencia ABIERTA → ASIGNADA
     def test_tomar_abierta_cambia_a_asignada(self):
         iid = self._seed("ABIERTA")
-        result = storage.update_incident_state(iid, "ASIGNADA", 444444444)
+        result = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR, ["ABIERTA"])
         self.assertTrue(result["success"])
-        self.assertEqual(result["new_state"], "ASIGNADA")
+        self.assertEqual(result["to_state"], "ASIGNADA")
         inc = storage.get_incident(iid)
         self.assertEqual(inc["estado"], "ASIGNADA")
         self.assertEqual(int(inc["assigned_to_telegram_id"]), 444444444)
@@ -67,14 +70,14 @@ class TestStorageTransitions(unittest.TestCase):
     # 2. Tomar incidencia ya ASIGNADA → falla
     def test_tomar_asignada_falla(self):
         iid = self._seed("ASIGNADA")
-        result = storage.update_incident_state(iid, "ASIGNADA", 444444444)
+        result = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR, ["ABIERTA"])
         self.assertFalse(result["success"])
         self.assertIn("ASIGNADA", result["reason"])
 
     # 3. EN_PROCESO desde ABIERTA → cambia y asigna actor
     def test_proceso_desde_abierta_asigna_actor(self):
         iid = self._seed("ABIERTA")
-        result = storage.update_incident_state(iid, "EN_PROCESO", 444444444)
+        result = storage.update_incident_state_atomic(iid, "EN_PROCESO", self.ACTOR, ["ABIERTA", "ASIGNADA"])
         self.assertTrue(result["success"])
         inc = storage.get_incident(iid)
         self.assertEqual(inc["estado"], "EN_PROCESO")
@@ -83,8 +86,8 @@ class TestStorageTransitions(unittest.TestCase):
     # 4. EN_PROCESO desde ASIGNADA → cambia sin tocar assignee original
     def test_proceso_desde_asignada_no_toca_assignee(self):
         iid = self._seed("ABIERTA")
-        storage.update_incident_state(iid, "ASIGNADA", 444444444)
-        storage.update_incident_state(iid, "EN_PROCESO", 777777777)
+        storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR, ["ABIERTA"])
+        storage.update_incident_state_atomic(iid, "EN_PROCESO", self.ACTOR_B, ["ABIERTA", "ASIGNADA"])
         inc = storage.get_incident(iid)
         self.assertEqual(inc["estado"], "EN_PROCESO")
         # Original assignee preserved
@@ -93,8 +96,8 @@ class TestStorageTransitions(unittest.TestCase):
     # 5. Cerrar desde ASIGNADA → CERRADA con closed_at y resolution_time
     def test_cerrar_desde_asignada_guarda_tiempos(self):
         iid = self._seed("ABIERTA")
-        storage.update_incident_state(iid, "ASIGNADA", 444444444)
-        result = storage.update_incident_state(iid, "CERRADA", 444444444)
+        storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR, ["ABIERTA"])
+        result = storage.update_incident_state_atomic(iid, "CERRADA", self.ACTOR, ["ABIERTA", "ASIGNADA", "EN_PROCESO"])
         self.assertTrue(result["success"])
         inc = storage.get_incident(iid)
         self.assertEqual(inc["estado"], "CERRADA")
@@ -104,16 +107,16 @@ class TestStorageTransitions(unittest.TestCase):
     # 6. Cerrar ya CERRADA → falla
     def test_cerrar_cerrada_falla(self):
         iid = self._seed("CERRADA")
-        result = storage.update_incident_state(iid, "CERRADA", 444444444)
+        result = storage.update_incident_state_atomic(iid, "CERRADA", self.ACTOR, ["ABIERTA", "ASIGNADA", "EN_PROCESO"])
         self.assertFalse(result["success"])
         self.assertIn("CERRADA", result["reason"])
 
     # 7. Cerrar desde ABIERTA también funciona
     def test_cerrar_desde_abierta(self):
         iid = self._seed("ABIERTA")
-        result = storage.update_incident_state(iid, "CERRADA", 444444444)
+        result = storage.update_incident_state_atomic(iid, "CERRADA", self.ACTOR, ["ABIERTA", "ASIGNADA", "EN_PROCESO"])
         self.assertTrue(result["success"])
-        self.assertEqual(result["new_state"], "CERRADA")
+        self.assertEqual(result["to_state"], "CERRADA")
 
     # 8. get_incident devuelve None para id inexistente
     def test_get_incident_inexistente(self):
@@ -125,36 +128,36 @@ class TestKeyboard(unittest.TestCase):
 
     # 7 (del criterio). build_keyboard ABIERTA → 3 botones
     def test_keyboard_abierta_tres_botones(self):
-        kb = build_keyboard_for_state(42, "ABIERTA", 444444444)
+        kb = build_keyboard_for_state(42, "ABIERTA")
         self.assertIsNotNone(kb)
         buttons = kb.inline_keyboard[0]
         self.assertEqual(len(buttons), 3)
         callbacks = [b.callback_data for b in buttons]
-        self.assertIn("incident_action:42:tomar:444444444", callbacks)
-        self.assertIn("incident_action:42:proceso:444444444", callbacks)
-        self.assertIn("incident_action:42:cerrar:444444444", callbacks)
+        self.assertIn("incident_action:42:tomar", callbacks)
+        self.assertIn("incident_action:42:proceso", callbacks)
+        self.assertIn("incident_action:42:cerrar", callbacks)
 
     # 8. build_keyboard ASIGNADA → 2 botones
     def test_keyboard_asignada_dos_botones(self):
-        kb = build_keyboard_for_state(42, "ASIGNADA", 444444444)
+        kb = build_keyboard_for_state(42, "ASIGNADA")
         self.assertIsNotNone(kb)
         self.assertEqual(len(kb.inline_keyboard[0]), 2)
 
     # 8 (criterio). build_keyboard EN_PROCESO → 1 botón
     def test_keyboard_en_proceso_un_boton(self):
-        kb = build_keyboard_for_state(42, "EN_PROCESO", 444444444)
+        kb = build_keyboard_for_state(42, "EN_PROCESO")
         self.assertIsNotNone(kb)
         self.assertEqual(len(kb.inline_keyboard[0]), 1)
-        self.assertEqual(kb.inline_keyboard[0][0].callback_data, "incident_action:42:cerrar:444444444")
+        self.assertEqual(kb.inline_keyboard[0][0].callback_data, "incident_action:42:cerrar")
 
     # 9. build_keyboard CERRADA → None
     def test_keyboard_cerrada_none(self):
-        kb = build_keyboard_for_state(42, "CERRADA", 444444444)
+        kb = build_keyboard_for_state(42, "CERRADA")
         self.assertIsNone(kb)
 
     # Callback data dentro del límite de 64 bytes
     def test_callback_data_dentro_limite_telegram(self):
-        kb = build_keyboard_for_state(9999, "ABIERTA", 9999999999)
+        kb = build_keyboard_for_state(9999, "ABIERTA")
         for btn in kb.inline_keyboard[0]:
             self.assertLessEqual(len(btn.callback_data.encode()), 64)
 
@@ -195,3 +198,56 @@ class TestPermissions(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Security test — actor identity must come from query.from_user.id
+# ---------------------------------------------------------------------------
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+
+EMPLEADOS_SEC = {
+    111111111: {"nombre": "María García", "departamento": "HOUSEKEEPING",
+                "rol": "EMPLEADO", "telegram_id": 111111111},
+    444444444: {"nombre": "Carlos Encargado", "departamento": "MANTENIMIENTO",
+                "rol": "ENCARGADO", "telegram_id": 444444444},
+}
+
+
+@pytest.mark.asyncio
+async def test_callback_actor_is_from_user_id(tmp_path):
+    """Actor identity comes from query.from_user.id — EMPLEADO is rejected."""
+    db_path = tmp_path / "test.db"
+    with patch.object(storage, "DB_PATH", db_path):
+        storage.init_db()
+        with storage._conn() as con:
+            from datetime import datetime
+            cur = con.execute(
+                """INSERT INTO classifications
+                   (timestamp, employee_name, employee_dept, message, tipo, prioridad,
+                    categoria, ubicacion, descripcion, estado)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (datetime.now().isoformat(timespec="seconds"),
+                 "Ana", "HK", "test", "INCIDENCIA", "ALTA",
+                 "MANTENIMIENTO", "Hab 1", "test", "ABIERTA"),
+            )
+            iid = cur.lastrowid
+
+        query = MagicMock()
+        query.from_user.id = 111111111
+        query.data = f"incident_action:{iid}:tomar"
+        query.answer = AsyncMock()
+
+        context = MagicMock()
+        context.bot_data = {"employees": EMPLEADOS_SEC}
+
+        from handlers.callback_handler import _handle_incident_action
+        await _handle_incident_action(query, context)
+
+        query.answer.assert_called_once()
+        answer_text = query.answer.call_args[0][0]
+        assert "permisos" in answer_text.lower()
+
+        inc = storage.get_incident(iid)
+        assert inc["estado"] == "ABIERTA"

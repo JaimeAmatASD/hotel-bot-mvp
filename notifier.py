@@ -22,9 +22,8 @@ def _time_ago(dt_str: str) -> str:
 def build_keyboard_for_state(
     incident_id: int,
     estado: str,
-    actor_telegram_id: int,
 ) -> InlineKeyboardMarkup | None:
-    cb = lambda action: f"incident_action:{incident_id}:{action}:{actor_telegram_id}"
+    cb = lambda action: f"incident_action:{incident_id}:{action}"
     buttons_by_state = {
         "ABIERTA":    [("🙋 Tomar", cb("tomar")), ("⏳ En proceso", cb("proceso")), ("✅ Cerrar", cb("cerrar"))],
         "ASIGNADA":   [("⏳ En proceso", cb("proceso")), ("✅ Cerrar", cb("cerrar"))],
@@ -108,7 +107,7 @@ def format_notification_message(
     incident_id = incident.get("id")
     keyboard = None
     if incident_id and actual_recipient_telegram_id:
-        keyboard = build_keyboard_for_state(incident_id, estado, actual_recipient_telegram_id)
+        keyboard = build_keyboard_for_state(incident_id, estado)
 
     return body, keyboard
 

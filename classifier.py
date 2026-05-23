@@ -6,7 +6,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY no encontrada en .env")
+        _client = genai.Client(api_key=api_key)
+    return _client
 
 SYSTEM_PROMPT = """Eres un asistente que estructura mensajes operativos del personal de un hotel boutique. El personal envía mensajes en su idioma (español, inglés, rumano, francés, alemán u otros) reportando incidencias, observaciones, o información sobre huéspedes. Tu única tarea es devolver un JSON válido siguiendo el esquema indicado.
 
@@ -122,7 +132,7 @@ def classify(
     else:
         contents = prompt
 
-    response = client.models.generate_content(
+    response = _get_client().models.generate_content(
         model="gemini-2.5-flash",
         contents=contents,
         config=types.GenerateContentConfig(

@@ -19,19 +19,20 @@ _STATE_MAP = {"tomar": "ASIGNADA", "proceso": "EN_PROCESO", "cerrar": "CERRADA"}
 
 
 async def _handle_incident_action(query, context) -> None:
-    """Handles incident_action:{incident_id}:{sub_action}:{actor_telegram_id} callbacks."""
+    """Handles incident_action:{incident_id}:{sub_action} callbacks."""
     parts = query.data.split(":")
-    if len(parts) != 4:
+    if len(parts) != 3:
         await query.answer("Formato de acción inválido", show_alert=True)
         return
 
-    _, incident_id_str, sub_action, actor_id_str = parts
+    _, incident_id_str, sub_action = parts
     try:
         incident_id = int(incident_id_str)
-        actor_telegram_id = int(actor_id_str)
     except ValueError:
         await query.answer("Datos de acción inválidos", show_alert=True)
         return
+
+    actor_telegram_id = query.from_user.id
 
     employees = context.bot_data["employees"]
     actor = employees.get(actor_telegram_id)
