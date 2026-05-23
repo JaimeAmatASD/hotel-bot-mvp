@@ -45,93 +45,100 @@ def _pop_correction_state(context) -> tuple[dict | None, bool]:
     return previous, False
 
 
-async def _do_report_open(update, context, employee):
-    tid = update.effective_user.id
-    open_rep = storage.get_open_report_for_employee(tid)
-    if open_rep:
-        msg_count = len(storage.get_report_messages(open_rep["id"]))
-        await update.message.reply_text(
-            f"Ya tenés un reporte abierto con {msg_count} ítem{'s' if msg_count != 1 else ''}. "
-            f"Mandame contenido o /fin para cerrarlo."
-        )
-        return
-    report_id = storage.open_report(employee)
-    context.user_data["open_report_id"] = report_id
-    await update.message.reply_text(
-        "📋 Modo reporte abierto.\n\n"
-        "Mandame todo lo del turno: incidencias, notas de huéspedes, observaciones. "
-        "Texto, audio o foto. Puedo recibir muchos mensajes.\n\n"
-        "Cuando termines, mandá /fin o decime \"cierre de reporte\"."
-    )
-
-
-async def _do_report_close(update, context, open_report, employee):
-    report_id = open_report["id"]
-    msg_count = len(storage.get_report_messages(report_id))
-    if msg_count == 0:
-        storage.close_report(report_id, "manual")
-        context.user_data.pop("open_report_id", None)
-        await update.message.reply_text("📋 Reporte cerrado (sin ítems).")
-        return
-    await update.message.reply_text(f"📋 Procesando tu reporte... Voy a clasificar {msg_count} ítem{'s' if msg_count != 1 else ''}.")
-    decomposed = await report_processor.process_report_at_closure(report_id, employee, context.bot_data["employees"])
-    context.user_data["pending_report"] = {"report_id": report_id, "items": decomposed["all_items"]}
-    context.user_data.pop("open_report_id", None)
-    text, keyboard = report_processor.format_report_summary(open_report, decomposed, employee)
-    await update.message.reply_text(text, reply_markup=keyboard)
-
-
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     employee = get_employee(update, context)
     if not employee:
         await update.message.reply_text("❌ No estás registrado. Contactá al administrador.")
         return
 
-    tid = update.effective_user.id
     text = update.message.text
 
-    # Report correction mode
-    if context.user_data.get("awaiting_report_correction"):
-        pending_report = context.user_data.get("pending_report")
-        if pending_report and report_processor._normalize(text).startswith("rehacer"):
-            context.user_data.pop("awaiting_report_correction", None)
-            context.user_data.pop("pending_report", None)
-            report_id = pending_report["report_id"]
-            # Reopen the report (status back to OPEN)
-            with storage._conn() as con:
-                con.execute("UPDATE reports SET status='OPEN', closed_at=NULL WHERE id=?", (report_id,))
-            context.user_data["open_report_id"] = report_id
-            msg_count = len(storage.get_report_messages(report_id))
-            await update.message.reply_text(
-                f"📋 Reporte reabierto con {msg_count} ítems anteriores. Podés añadir más o /fin para cerrar."
-            )
-        else:
-            context.user_data.pop("awaiting_report_correction", None)
-            await update.message.reply_text("✓ Anotada la corrección. Procesando resumen actualizado...")
-            report_id = pending_report["report_id"] if pending_report else None
-            if report_id:
-                open_rep = {"id": report_id}
-                decomposed = await report_processor.process_report_at_closure(report_id, employee, context.bot_data["employees"])
-                context.user_data["pending_report"] = {"report_id": report_id, "items": decomposed["all_items"]}
-                summary_text, keyboard = report_processor.format_report_summary(open_rep, decomposed, employee)
-                await update.message.reply_text(summary_text, reply_markup=keyboard)
+    # Awaiting correction text for a specific item (OBS/GUEST_INTEL)
+    if context.user_data.get("awaiting_item_correction"):
+        state = context.user_data["awaiting_item_correction"]
+        started_at = state.get("started_at")
+        if started_at:
+            elapsed = datetime.now() - datetime.fromisoformat(started_at)
+            if elapsed > timedelta(minutes=CORRECTION_TIMEOUT_MINUTES):
+                context.user_data.pop("awaiting_item_correction", None)
+                await update.message.reply_text("⏱ Tiempo agotado. Usá /reporte para ver el resumen de nuevo.")
+                return
+        item_id = state["item_id"]
+        item_num = state["item_num"]
+        report_items = state["report_items"]
+        hours = state.get("hours", 12)
+
+        item = next((i for i in report_items if i["id"] == item_id), None)
+        previous_ctx = {"result": item, "original_text": item.get("message", "")} if item else None
+        new_result = process_message(text, employee, previous_context=previous_ctx)
+
+        storage.update_classification(item_id, new_result)
+
+        # Update item in-memory so re-shown summary reflects the change
+        if item:
+            item.update({k: v for k, v in new_result.items() if k not in ("id", "timestamp", "employee_name", "employee_dept", "estado", "report_id")})
+
+        context.user_data.pop("awaiting_item_correction", None)
+        context.user_data["pending_report_items"] = {"items": report_items, "hours": hours}
+
+        await update.message.reply_text(f"✅ Ítem {item_num} actualizado.")
+        summary_text, keyboard = report_processor.format_report_summary(report_items, employee, hours)
+        await update.message.reply_text(summary_text, reply_markup=keyboard)
         return
 
-    # Report mode check
-    open_report = storage.get_open_report_for_employee(tid)
-    if open_report:
-        if report_processor.is_close_keyword(text):
-            await _do_report_close(update, context, open_report, employee)
+    # Awaiting item number for correction selection
+    if context.user_data.get("awaiting_correction_item"):
+        state = context.user_data["awaiting_correction_item"]
+        started_at = state.get("started_at")
+        if started_at:
+            elapsed = datetime.now() - datetime.fromisoformat(started_at)
+            if elapsed > timedelta(minutes=CORRECTION_TIMEOUT_MINUTES):
+                context.user_data.pop("awaiting_correction_item", None)
+                await update.message.reply_text("⏱ Tiempo agotado. Usá /reporte para ver el resumen de nuevo.")
+                return
+
+        report_items = state["report_items"]
+        hours = state.get("hours", 12)
+        n = len(report_items)
+
+        try:
+            num = int(text.strip())
+        except ValueError:
+            await update.message.reply_text(f"Mandame un número entre 1 y {n}.")
             return
-        storage.add_message_to_report(open_report["id"], "text", text)
-        await update.message.reply_text("✓ anotado")
-        return
 
-    if report_processor.is_open_keyword(text):
-        await _do_report_open(update, context, employee)
+        if num < 1 or num > n:
+            await update.message.reply_text(f"No encontré ese ítem. Probá entre 1 y {n}.")
+            return
+
+        item = report_items[num - 1]
+        context.user_data.pop("awaiting_correction_item", None)
+
+        if item.get("tipo") == "INCIDENCIA":
+            # Re-show summary with buttons so they can try another item
+            context.user_data["pending_report_items"] = {"items": report_items, "hours": hours}
+            await update.message.reply_text(
+                "🔒 Las incidencias ya están en gestión y no se pueden modificar desde acá. Hablá con tu encargado."
+            )
+            summary_text, keyboard = report_processor.format_report_summary(report_items, employee, hours)
+            await update.message.reply_text(summary_text, reply_markup=keyboard)
+            return
+
+        context.user_data["awaiting_item_correction"] = {
+            "item_id": item["id"],
+            "item_num": num,
+            "report_items": report_items,
+            "hours": hours,
+            "started_at": datetime.now().isoformat(),
+        }
+        await update.message.reply_text(
+            f"Decime qué corregir o agregar (texto o audio). Estoy reprocesando el ítem {num}: "
+            f"{(item.get('descripcion') or '')[:60]}"
+        )
         return
 
     # Normal flow
+    tid = update.effective_user.id
     debug_mode = get_debug_mode(tid)
 
     previous_context, timed_out = _pop_followup_state(context)

@@ -7,7 +7,6 @@ from handlers import get_employee, format_summary, format_summary_with_warning, 
 from config.rules import CORRECTION_TIMEOUT_MINUTES
 from storage import get_debug_mode
 import storage
-import report_processor
 
 
 def _pop_followup_state(context) -> tuple[dict | None, bool]:
@@ -54,7 +53,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     tid = update.effective_user.id
 
-    # Download photo first (needed for both report mode and normal mode)
     photo = update.message.photo[-1]
     photos_dir = Path("data/photos") / str(tid)
     photos_dir.mkdir(parents=True, exist_ok=True)
@@ -65,17 +63,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     caption = update.message.caption or ""
 
-    open_report = storage.get_open_report_for_employee(tid)
-    if open_report:
-        if report_processor.is_close_keyword(caption):
-            from handlers.text_handler import _do_report_close
-            await _do_report_close(update, context, open_report, employee)
-            return
-        storage.add_message_to_report(open_report["id"], "photo", caption or "", photo_path=str(photo_path))
-        await update.message.reply_text("✓ anotado")
-        return
-
-    # Normal flow
     debug_mode = get_debug_mode(tid)
 
     previous_context, timed_out = _pop_followup_state(context)

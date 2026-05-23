@@ -20,3 +20,7 @@ env/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Credenciales Google (cuenta de servicio) - NUNCA commitear
+config/google_service_account.json
+*service_account*.json

@@ -42,12 +42,25 @@ Solución: instrucción explícita de que el departamento solo sirve para interp
 y que la categoría se asigna EXCLUSIVAMENTE por el contenido del mensaje.
 Aplicable a cualquier campo de metadato que pueda confundirse con señal de clasificación.
 
-## L-04: pytest-asyncio requiere marca explícita en modo STRICT
+## L-04: pytest-asyncio — instalar, fijar en requirements.txt, y configurar asyncio_mode
 
-Con `asyncio_mode = strict` (default en pytest-asyncio >= 0.21), los tests async
-necesitan el decorador `@pytest.mark.asyncio`. Sin él los tests se saltan silenciosamente.
-Agregar `pytest.ini` o `pyproject.toml` con `asyncio_mode = auto` para evitarlo,
-o marcar cada test individualmente.
+`pytest-asyncio` no viene con pytest base. Si no está instalado, los tests async fallan
+con "async def functions are not natively supported" (no se saltan — fallan). Esto puede
+confundirse con un fallo de lógica cuando en realidad es un fallo de infraestructura de tests.
+
+**Fix completo (los tres pasos son necesarios):**
+1. `pip install pytest-asyncio` + agregar `pytest-asyncio>=0.23` a `requirements.txt`
+2. Crear `pytest.ini` con `asyncio_mode = auto` — sin esto, cada test async necesita
+   `@pytest.mark.asyncio` explícito y en modo STRICT se saltan silenciosamente.
+3. Verificar que los tests async **corren** (pasan o fallan con lógica), no solo que
+   pytest no reporta errores de colección.
+
+**Señal de alerta:** si ves "PytestUnknownMarkWarning: Unknown pytest.mark.asyncio"
+en el output de pytest, pytest-asyncio no está instalado o no está en el path correcto.
+
+**Por qué se perdió:** `pytest-asyncio` no estaba en `requirements.txt` desde el inicio
+del proyecto. Se instalaba manualmente en el venv durante el desarrollo pero no se
+persitía. Al re-crear el venv o en CI, los tests async empezaban a fallar.
 
 ## L-08: Estructura de roles — 3 niveles con mapeo categoría→departamento (Sprint B.1)
 
@@ -196,6 +209,38 @@ Aceptable si los queries sobre `extra` son raros (en este caso lo son).
 Para testear race conditions sin sleep: `threading.Barrier(2)` sincroniza el arranque
 de ambos threads. Ambos llegan a `barrier.wait()`, se bloquean, y arrancan juntos.
 Esto maximiza la probabilidad de colisión sin depender de timing.
+
+## Sprint B.5 — Rediseño reportes retrospectivos (2026-05-21)
+
+### Patrón acumulativo retrasa notificaciones — usar procesamiento individual + resumen retrospectivo
+
+El diseño "abrir modo → acumular mensajes → batch al cerrar" parecía ordenado pero
+rompía el principio BASE PRIMERO: las incidencias no se notificaban hasta el cierre del turno.
+Solución: cada mensaje se procesa individualmente al llegar (flujo A), y el reporte es solo
+un resumen retrospectivo de lo ya clasificado. Regla: si una decisión de diseño retrasa
+una acción urgente (notificación, alerta), es un error de arquitectura aunque sea "limpia".
+
+### Funciones obsoletas: marcar como DEPRECATED en vez de borrar columnas
+
+Cuando un rediseño elimina un modelo de datos, las tablas viejas (report_messages) y las
+columnas relacionadas no se borran de SQLite — requieren migraciones en producción que
+pueden romper DBs existentes. Solución: dejar la tabla, quitar las funciones Python que
+la escriben, y documentar con "# DEPRECATED" si hay referencias. Rollback sin migración.
+
+### Draft de reporte en user_data, no en DB
+
+El estado "pendiente de confirmación" del reporte vive en `context.user_data` (en memoria),
+no en una fila OPEN en la tabla `reports`. Ventaja: si el bot reinicia, no quedan reportes
+fantasma en estado OPEN. Contrapartida: el draft se pierde si el bot cae. Aceptable para
+este caso porque el empleado puede hacer /reporte de nuevo y reconstruye el resumen.
+
+### callback_data sin ID de recurso cuando el estado vive en user_data
+
+Si los ítems del reporte viven en `user_data`, el callback_data puede ser un string simple
+("report_confirm_all", "report_correct") sin necesidad de incluir el report_id ni los IDs
+de clasificaciones — el handler lo lee de user_data. Solo incluir IDs en callback_data cuando
+no haya otra forma de recuperar el recurso (ej: botones en mensajes de notificación, donde
+no hay user_data de contexto).
 
 ## Sprint B.4 — Comandos de consulta (2026-05-16)
 

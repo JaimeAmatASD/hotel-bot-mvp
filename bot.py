@@ -50,16 +50,6 @@ def main():
         )
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
-    async def check_expired_reports(ctx):
-        import storage as _storage
-        from config.settings import REPORT_TIMEOUT_HOURS
-        expired = _storage.get_expired_open_reports(REPORT_TIMEOUT_HOURS)
-        for rep in expired:
-            from report_processor import close_report_with_timeout
-            await close_report_with_timeout(ctx.bot, rep, ctx.bot_data["employees"])
-
-    app.job_queue.run_repeating(check_expired_reports, interval=3600, first=60)
-
     print("Bot iniciado. Ctrl+C para detener.")
     app.run_polling()
 

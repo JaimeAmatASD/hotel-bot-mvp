@@ -3,3 +3,4 @@ python-dotenv
 streamlit
 groq
 python-telegram-bot>=20.0
+pytest-asyncio>=0.23
