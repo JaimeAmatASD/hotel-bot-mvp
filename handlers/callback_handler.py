@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -7,6 +8,7 @@ import notifier
 import permissions
 import storage
 import report_processor
+import sheets_sync
 
 
 _EXPECTED_FROM = {
@@ -113,6 +115,9 @@ async def _handle_incident_action(query, context) -> None:
     )
 
     await query.answer()
+    asyncio.create_task(
+        sheets_sync.sync_incidencia(updated_incident, display_id, employees)
+    )
 
 
 async def _handle_report_confirm(query, context) -> None:
@@ -141,6 +146,7 @@ async def _handle_report_confirm(query, context) -> None:
         chat_id=query.message.chat_id,
         text=f"📋 {display_id} creado. Gracias, {nombre}.",
     )
+    asyncio.create_task(sheets_sync.sync_reporte(report, items, display_id))
 
 
 async def _handle_report_correct_start(query, context) -> None:
@@ -219,6 +225,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 employees=context.bot_data["employees"],
                 reporter_employee=employee,
             )
+
+        tipo = result.get("tipo")
+        if tipo == "INCIDENCIA":
+            fresh_inc = storage.get_incident(incident_id)
+            inc_display = storage.generate_display_id("INCIDENCIA", incident_id)
+            asyncio.create_task(
+                sheets_sync.sync_incidencia(fresh_inc, inc_display, context.bot_data.get("employees"))
+            )
+        elif tipo == "GUEST_INTEL":
+            gi_display = storage.generate_display_id("GUEST_INTEL", incident_id)
+            asyncio.create_task(sheets_sync.sync_guest_intel(result, employee, gi_display))
+        elif tipo == "OBSERVACION":
+            obs_display = storage.generate_display_id("OBSERVACION", incident_id)
+            asyncio.create_task(sheets_sync.sync_observacion(result, employee, obs_display))
 
     elif action == "correct":
         context.user_data["awaiting_correction"] = True

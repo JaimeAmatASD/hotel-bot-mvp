@@ -1,10 +1,16 @@
 import json
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 from telegram.ext import Application, MessageHandler, CallbackQueryHandler, CommandHandler, filters
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+)
 
 from handlers.text_handler import handle_text
 from handlers.audio_handler import handle_audio
@@ -49,6 +55,9 @@ def main():
             "❓ Ese comando no existe. Mandá /help para ver los disponibles."
         )
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+
+    import sheets_sync
+    sheets_sync.ensure_headers()
 
     print("Bot iniciado. Ctrl+C para detener.")
     app.run_polling()
