@@ -24,3 +24,6 @@ Thumbs.db
 # Credenciales Google (cuenta de servicio) - NUNCA commitear
 config/google_service_account.json
 *service_account*.json
+
+# Artefactos de herramientas
+.codex

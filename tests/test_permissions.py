@@ -179,10 +179,12 @@ def test_employees_json_parsea_correctamente():
     path = Path(__file__).parent.parent / "config" / "employees.json"
     data = json.loads(path.read_text())
     assert "employees" in data
-    assert len(data["employees"]) == 8
-    roles = {e["rol"] for e in data["employees"]}
+    empleados = data["employees"]
+    assert len(empleados) >= 1
+    campos_obligatorios = {"telegram_id", "nombre", "departamento", "rol", "idioma"}
+    for emp in empleados:
+        assert campos_obligatorios <= emp.keys(), f"Faltan campos en {emp.get('nombre')}"
+    roles = {e["rol"] for e in empleados}
     assert roles == {"EMPLEADO", "ENCARGADO", "GERENTE_GENERAL"}
-    gerentes = [e for e in data["employees"] if e["rol"] == "GERENTE_GENERAL"]
-    assert len(gerentes) >= 1  # al menos Alfredo Gerente
-    encargados = [e for e in data["employees"] if e["rol"] == "ENCARGADO"]
-    assert len(encargados) >= 3
+    assert sum(1 for e in empleados if e["rol"] == "GERENTE_GENERAL") >= 1
+    assert sum(1 for e in empleados if e["rol"] == "ENCARGADO") >= 3

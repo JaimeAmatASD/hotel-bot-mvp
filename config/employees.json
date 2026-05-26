@@ -29,6 +29,13 @@
       "rol": "EMPLEADO"
     },
     {
+      "telegram_id": 8709342265,
+      "nombre": "Juan Encargado Mantenimiento",
+      "departamento": "MANTENIMIENTO",
+      "idioma": "es",
+      "rol": "GERENTE_GENERAL"
+    },
+    {
       "telegram_id": 444444444,
       "nombre": "Carlos Encargado Mant",
       "departamento": "MANTENIMIENTO",
