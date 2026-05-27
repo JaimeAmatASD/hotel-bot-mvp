@@ -57,7 +57,9 @@ def main():
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     import storage
+    from storage.migrations import apply_pending
     storage.init_db()
+    apply_pending()  # no-op por ahora pero deja el hook listo
 
     import sheets_sync
     sheets_sync.ensure_headers()
