@@ -3,6 +3,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from config.enums import IncidentState, ReportType
+
 DB_PATH = Path(__file__).parent / "data" / "hotel_bot.db"
 
 
@@ -128,7 +130,6 @@ def init_db():
 
 
 def get_debug_mode(telegram_id: int) -> bool:
-    init_db()
     with _conn() as con:
         row = con.execute(
             "SELECT debug_mode FROM user_preferences WHERE telegram_id = ?", (telegram_id,)
@@ -137,7 +138,6 @@ def get_debug_mode(telegram_id: int) -> bool:
 
 
 def set_debug_mode(telegram_id: int, enabled: bool) -> None:
-    init_db()
     with _conn() as con:
         con.execute(
             "INSERT OR REPLACE INTO user_preferences (telegram_id, debug_mode) VALUES (?, ?)",
@@ -146,7 +146,6 @@ def set_debug_mode(telegram_id: int, enabled: bool) -> None:
 
 
 def save(employee: dict, message: str, result: dict) -> int:
-    init_db()
     with _conn() as con:
         cur = con.execute("""
             INSERT INTO classifications
@@ -174,7 +173,6 @@ def save(employee: dict, message: str, result: dict) -> int:
 
 
 def get_employees():
-    init_db()
     with _conn() as con:
         rows = con.execute("""
             SELECT employee_name, employee_dept, COUNT(*) as total,
@@ -187,7 +185,6 @@ def get_employees():
 
 
 def get_employee_stats(name: str) -> dict:
-    init_db()
     with _conn() as con:
         rows = con.execute("""
             SELECT * FROM classifications
@@ -232,7 +229,6 @@ def get_employee_stats(name: str) -> dict:
 
 
 def get_all_history():
-    init_db()
     with _conn() as con:
         rows = con.execute("""
             SELECT timestamp, employee_name, employee_dept, message,
@@ -245,11 +241,11 @@ def get_all_history():
 
 
 _DISPLAY_PREFIXES = {
-    "INCIDENCIA": "INC",
-    "OBSERVACION": "OBS",
-    "GUEST_INTEL": "MEM",
-    "NO_REPORTE": "NR",
-    "REPORT": "REP",
+    ReportType.INCIDENCIA: "INC",
+    ReportType.OBSERVACION: "OBS",
+    ReportType.GUEST_INTEL: "MEM",
+    ReportType.NO_REPORTE: "NR",
+    ReportType.REPORT: "REP",
 }
 
 
@@ -266,7 +262,6 @@ def save_notification(
     status: str,
     error_message: str | None = None,
 ) -> None:
-    init_db()
     with _conn() as con:
         con.execute("""
             INSERT INTO notifications
@@ -285,7 +280,6 @@ def save_notification(
 
 
 def get_notifications_for_incident(incident_id: int) -> list[dict]:
-    init_db()
     with _conn() as con:
         rows = con.execute(
             "SELECT * FROM notifications WHERE incident_id = ? ORDER BY timestamp",
@@ -295,7 +289,6 @@ def get_notifications_for_incident(incident_id: int) -> list[dict]:
 
 
 def get_recent_notifications(limit: int = 50) -> list[dict]:
-    init_db()
     with _conn() as con:
         rows = con.execute(
             "SELECT * FROM notifications ORDER BY timestamp DESC LIMIT ?", (limit,)
@@ -305,7 +298,6 @@ def get_recent_notifications(limit: int = 50) -> list[dict]:
 
 def get_notification_preferences(telegram_id: int) -> dict:
     """Returns {"mode": "criticas", "excluded_departments": [...]}"""
-    init_db()
     with _conn() as con:
         row = con.execute(
             "SELECT notification_mode, excluded_departments FROM user_preferences WHERE telegram_id = ?",
@@ -319,7 +311,6 @@ def get_notification_preferences(telegram_id: int) -> dict:
 
 
 def set_notification_mode(telegram_id: int, mode: str) -> None:
-    init_db()
     with _conn() as con:
         con.execute(
             """INSERT INTO user_preferences (telegram_id, notification_mode)
@@ -330,7 +321,6 @@ def set_notification_mode(telegram_id: int, mode: str) -> None:
 
 
 def get_incident(incident_id: int) -> dict | None:
-    init_db()
     with _conn() as con:
         row = con.execute(
             "SELECT * FROM classifications WHERE id = ?", (incident_id,)
@@ -340,7 +330,6 @@ def get_incident(incident_id: int) -> dict | None:
 
 
 def get_incident_assignee(incident_id: int) -> dict | None:
-    init_db()
     with _conn() as con:
         row = con.execute(
             "SELECT assigned_to_telegram_id FROM classifications WHERE id = ?",
@@ -376,7 +365,6 @@ _PRIORITY_ORDER = "CASE prioridad WHEN 'CRITICA' THEN 1 WHEN 'ALTA' THEN 2 WHEN 
 
 
 def get_open_incidents(prioridad: str | None = None, limit: int = 100) -> list[dict]:
-    init_db()
     params: list = []
     where = "tipo = 'INCIDENCIA' AND (estado IS NULL OR estado IN ('ABIERTA', 'ASIGNADA', 'EN_PROCESO'))"
     if prioridad:
@@ -392,7 +380,6 @@ def get_open_incidents(prioridad: str | None = None, limit: int = 100) -> list[d
 
 
 def get_incidents_for_room(room_or_zone: str, days_back: int = 30) -> list[dict]:
-    init_db()
     since = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     from datetime import timedelta
     since -= timedelta(days=days_back)
@@ -409,7 +396,6 @@ def get_incidents_for_room(room_or_zone: str, days_back: int = 30) -> list[dict]
 
 
 def get_guest_intel_for_room(room: str, days_back: int = 30) -> list[dict]:
-    init_db()
     from datetime import timedelta
     since = (datetime.now() - timedelta(days=days_back)).isoformat(timespec="seconds")
     with _conn() as con:
@@ -425,7 +411,6 @@ def get_guest_intel_for_room(room: str, days_back: int = 30) -> list[dict]:
 
 
 def get_observations_for_room(room_or_zone: str, days_back: int = 30) -> list[dict]:
-    init_db()
     from datetime import timedelta
     since = (datetime.now() - timedelta(days=days_back)).isoformat(timespec="seconds")
     with _conn() as con:
@@ -441,7 +426,6 @@ def get_observations_for_room(room_or_zone: str, days_back: int = 30) -> list[di
 
 
 def search_classifications(query: str, days_back: int = 90, limit: int = 10) -> list[dict]:
-    init_db()
     from datetime import timedelta
     since = (datetime.now() - timedelta(days=days_back)).isoformat(timespec="seconds")
     pattern = f"%{query}%"
@@ -463,7 +447,11 @@ def search_classifications(query: str, days_back: int = 90, limit: int = 10) -> 
 # Event log
 # ---------------------------------------------------------------------------
 
-_ACTION_FROM_STATE = {"ASIGNADA": "tomar", "EN_PROCESO": "en_proceso", "CERRADA": "cerrar"}
+_ACTION_FROM_STATE = {
+    IncidentState.ASIGNADA: "tomar",
+    IncidentState.EN_PROCESO: "en_proceso",
+    IncidentState.CERRADA: "cerrar",
+}
 
 
 def save_event(
@@ -478,7 +466,6 @@ def save_event(
     reason: str | None = None,
     extra: dict | None = None,
 ) -> int:
-    init_db()
     extra_json = json.dumps(extra, ensure_ascii=False) if extra else None
     with _conn() as con:
         cur = con.execute(
@@ -496,7 +483,6 @@ def save_event(
 
 
 def get_events_for_incident(incident_id: int) -> list[dict]:
-    init_db()
     with _conn() as con:
         rows = con.execute(
             "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY timestamp ASC, id ASC",
@@ -521,7 +507,6 @@ def update_incident_state_atomic(
     expected_from_states: list[str],
 ) -> dict:
     """Atomic read-modify-write using BEGIN IMMEDIATE. Registers event in same transaction."""
-    init_db()
     actor_tid = actor.get("telegram_id", 0)
     actor_name = actor.get("nombre")
     actor_role = actor.get("rol", "EMPLEADO")
@@ -542,7 +527,7 @@ def update_incident_state_atomic(
             con.execute("ROLLBACK")
             return {"success": False, "from_state": None, "to_state": None, "reason": "Incidencia no encontrada"}
 
-        current = row["estado"] or "ABIERTA"
+        current = row["estado"] or IncidentState.ABIERTA
         now = datetime.now().isoformat(timespec="seconds")
 
         if current not in expected_from_states:
@@ -564,21 +549,22 @@ def update_incident_state_atomic(
             }
 
         # Apply the state transition
-        if new_state == "ASIGNADA":
+        if new_state == IncidentState.ASIGNADA:
             con.execute(
                 "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, assigned_at=? WHERE id=?",
-                ("ASIGNADA", actor_tid, now, incident_id),
+                (IncidentState.ASIGNADA, actor_tid, now, incident_id),
             )
-        elif new_state == "EN_PROCESO":
+        elif new_state == IncidentState.EN_PROCESO:
             assign_id = row["assigned_to_telegram_id"] or actor_tid
             if not row["assigned_to_telegram_id"]:
                 con.execute(
                     "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, assigned_at=? WHERE id=?",
-                    ("EN_PROCESO", assign_id, now, incident_id),
+                    (IncidentState.EN_PROCESO, assign_id, now, incident_id),
                 )
             else:
-                con.execute("UPDATE classifications SET estado=? WHERE id=?", ("EN_PROCESO", incident_id))
-        elif new_state == "CERRADA":
+                con.execute("UPDATE classifications SET estado=? WHERE id=?",
+                            (IncidentState.EN_PROCESO, incident_id))
+        elif new_state == IncidentState.CERRADA:
             try:
                 created_dt = datetime.fromisoformat(row["timestamp"])
                 resolution_minutes = int((datetime.now() - created_dt).total_seconds() / 60)
@@ -586,7 +572,7 @@ def update_incident_state_atomic(
                 resolution_minutes = None
             con.execute(
                 "UPDATE classifications SET estado=?, closed_at=?, resolution_time_minutes=? WHERE id=?",
-                ("CERRADA", now, resolution_minutes, incident_id),
+                (IncidentState.CERRADA, now, resolution_minutes, incident_id),
             )
 
         # Register success event
@@ -625,7 +611,6 @@ def get_incident_with_events(incident_id: int) -> dict | None:
 
 def create_report(employee: dict) -> int:
     """Inserts a closed report record and returns its id. Draft state lives only in user_data."""
-    init_db()
     tid = employee.get("telegram_id", 0)
     now = datetime.now().isoformat(timespec="seconds")
     with _conn() as con:
@@ -639,7 +624,6 @@ def create_report(employee: dict) -> int:
 
 def get_report_with_items(report_id: int) -> dict | None:
     """Returns report dict with items (classifications linked to it). messages is always []."""
-    init_db()
     with _conn() as con:
         row = con.execute("SELECT * FROM reports WHERE id = ?", (report_id,)).fetchone()
     if not row:
@@ -656,7 +640,6 @@ def get_report_with_items(report_id: int) -> dict | None:
 
 
 def link_classification_to_report(classification_id: int, report_id: int) -> None:
-    init_db()
     with _conn() as con:
         con.execute(
             "UPDATE classifications SET report_id = ? WHERE id = ?",
@@ -668,7 +651,6 @@ def link_classifications_to_report(classification_ids: list[int], report_id: int
     """Batch-links a list of classification ids to a report."""
     if not classification_ids:
         return
-    init_db()
     placeholders = ",".join("?" * len(classification_ids))
     with _conn() as con:
         con.execute(
@@ -686,7 +668,6 @@ def get_classifications_for_employee_recent(
 
     If exclude_in_report is True, skips items already linked to a report.
     """
-    init_db()
     from datetime import timedelta
     since = (datetime.now() - timedelta(hours=hours)).isoformat(timespec="seconds")
     query = """
@@ -710,7 +691,6 @@ def update_classification(classification_id: int, result: dict) -> None:
     Immutable fields (timestamp, employee_name, employee_dept, estado, assigned_*,
     closed_*, report_id) are never touched.
     """
-    init_db()
     with _conn() as con:
         con.execute(
             """UPDATE classifications SET

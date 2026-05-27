@@ -1,19 +1,21 @@
 from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from config.enums import IncidentState, ReportType, Priority, Role
+
 PRIORIDAD_EMOJI = {
-    "CRITICA": "🔴",
-    "ALTA": "🟠",
-    "MEDIA": "🟡",
-    "BAJA": "🟢",
+    Priority.CRITICA: "🔴",
+    Priority.ALTA: "🟠",
+    Priority.MEDIA: "🟡",
+    Priority.BAJA: "🟢",
 }
 
 TIPO_EMOJI = {
-    "INCIDENCIA": "🔧",
-    "OBSERVACION": "👁",
-    "GUEST_INTEL": "💡",
-    "NO_REPORTE": "ℹ️",
-    "ERROR": "❌",
+    ReportType.INCIDENCIA: "🔧",
+    ReportType.OBSERVACION: "👁",
+    ReportType.GUEST_INTEL: "💡",
+    ReportType.NO_REPORTE: "ℹ️",
+    ReportType.ERROR: "❌",
 }
 
 CONFIRM_KEYBOARD = InlineKeyboardMarkup([
@@ -25,7 +27,7 @@ CONFIRM_KEYBOARD = InlineKeyboardMarkup([
 
 
 def format_summary(result: dict) -> str:
-    tipo = result.get("tipo", "ERROR")
+    tipo = result.get("tipo", ReportType.ERROR)
     prioridad = result.get("prioridad")
     ubicacion = result.get("ubicacion")
     categoria = result.get("categoria")
@@ -122,22 +124,22 @@ def format_incident_line(incident: dict, employees: dict) -> str:
     import storage as _storage
     from permissions import _incident_department
     iid = incident.get("id", 0)
-    display_id = _storage.generate_display_id("INCIDENCIA", iid)
+    display_id = _storage.generate_display_id(ReportType.INCIDENCIA, iid)
     prioridad = incident.get("prioridad", "")
     emoji = format_priority_emoji(prioridad)
     ubicacion = incident.get("ubicacion", "")
     descripcion = incident.get("descripcion", "")
     created_at = incident.get("timestamp", "")
     dept = _incident_department(incident)
-    estado = incident.get("estado") or "ABIERTA"
+    estado = incident.get("estado") or IncidentState.ABIERTA
 
     assignee = _resolve_assignee_name(incident, employees)
     assigned_at = incident.get("assigned_at")
 
-    if estado == "ASIGNADA" and assignee:
+    if estado == IncidentState.ASIGNADA and assignee:
         age = f" {format_relative_time(assigned_at)}" if assigned_at else ""
         estado_str = f"ASIGNADA a {assignee}{age}"
-    elif estado == "EN_PROCESO" and assignee:
+    elif estado == IncidentState.EN_PROCESO and assignee:
         age = f" {format_relative_time(assigned_at)}" if assigned_at else ""
         estado_str = f"EN_PROCESO por {assignee}{age}"
     else:
@@ -191,7 +193,7 @@ def format_room_view(
         lines.append(f"✅ Incidencias resueltas recientes ({len(incidents_closed)}):")
         for inc in incidents_closed:
             iid = inc.get("id", 0)
-            display_id = _storage.generate_display_id("INCIDENCIA", iid)
+            display_id = _storage.generate_display_id(ReportType.INCIDENCIA, iid)
             prioridad = inc.get("prioridad", "")
             emoji = format_priority_emoji(prioridad)
             descripcion = inc.get("descripcion", "")
@@ -234,7 +236,7 @@ def format_room_view(
 
 
 def get_help_text(role: str, department: str | None = None) -> str:
-    if role == "GERENTE_GENERAL":
+    if role == Role.GERENTE_GENERAL:
         return (
             "🤖 Comandos disponibles (gerente general)\n\n"
             "📝 Reportar\n"
@@ -253,7 +255,7 @@ def get_help_text(role: str, department: str | None = None) -> str:
             "⚙️ Configurar\n"
             "/notificaciones — gestionar tus notificaciones"
         )
-    if role == "ENCARGADO":
+    if role == Role.ENCARGADO:
         dept_str = f" · {department}" if department else ""
         return (
             f"🤖 Comandos disponibles (encargado{dept_str})\n\n"
@@ -360,7 +362,7 @@ def build_timeline_text(events: list[dict]) -> str:
 def format_incident_history(incident: dict, events: list[dict]) -> str:
     import storage as _storage
     iid = incident.get("id", 0)
-    display_id = _storage.generate_display_id("INCIDENCIA", iid)
+    display_id = _storage.generate_display_id(ReportType.INCIDENCIA, iid)
     prioridad = incident.get("prioridad", "")
     ubicacion = incident.get("ubicacion", "")
     descripcion = incident.get("descripcion", "")

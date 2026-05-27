@@ -5,6 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import storage
 from config import settings
+from config.enums import IncidentState, ReportType, NotificationMode, Role
 
 
 def consolidate_recent_classifications(employee_name: str, hours: int) -> list[dict]:
@@ -25,9 +26,9 @@ def format_report_summary(items: list[dict], employee: dict, hours: int) -> tupl
     Returns (message_text, keyboard).
     """
     employee_name = employee.get("nombre", "")
-    incidencias = [i for i in items if i.get("tipo") == "INCIDENCIA"]
-    guest_intel = [i for i in items if i.get("tipo") == "GUEST_INTEL"]
-    observaciones = [i for i in items if i.get("tipo") == "OBSERVACION"]
+    incidencias = [i for i in items if i.get("tipo") == ReportType.INCIDENCIA]
+    guest_intel = [i for i in items if i.get("tipo") == ReportType.GUEST_INTEL]
+    observaciones = [i for i in items if i.get("tipo") == ReportType.OBSERVACION]
     total = len(items)
 
     lines = [f"📋 Resumen últimas {hours}h — {employee_name}", f"{total} ítem{'s' if total != 1 else ''}", ""]
@@ -39,7 +40,7 @@ def format_report_summary(items: list[dict], employee: dict, hours: int) -> tupl
         for item in incidencias:
             ubicacion = item.get("ubicacion", "")
             descripcion = (item.get("descripcion") or "")[:50]
-            estado = item.get("estado") or "ABIERTA"
+            estado = item.get("estado") or IncidentState.ABIERTA
             lines.append(f"  {num}. {ubicacion} — {descripcion} [{estado}]")
             num += 1
 
@@ -66,9 +67,9 @@ def format_report_for_manager(report: dict, items: list[dict], display_id: str) 
     items: list of classification dicts linked to the report.
     """
     employee_name = report.get("employee_name", "")
-    n_inc = sum(1 for i in items if i.get("tipo") == "INCIDENCIA")
-    n_gi = sum(1 for i in items if i.get("tipo") == "GUEST_INTEL")
-    n_obs = sum(1 for i in items if i.get("tipo") == "OBSERVACION")
+    n_inc = sum(1 for i in items if i.get("tipo") == ReportType.INCIDENCIA)
+    n_gi = sum(1 for i in items if i.get("tipo") == ReportType.GUEST_INTEL)
+    n_obs = sum(1 for i in items if i.get("tipo") == ReportType.OBSERVACION)
     total = len(items)
 
     lines = [
@@ -89,17 +90,17 @@ def format_report_for_manager(report: dict, items: list[dict], display_id: str) 
 async def notify_manager_report(bot, report: dict, items: list[dict], employees: dict) -> None:
     """Sends report summary to managers whose mode is 'todo', respecting redirect."""
     report_id = report["id"]
-    display_id = storage.generate_display_id("REPORT", report_id)
+    display_id = storage.generate_display_id(ReportType.REPORT, report_id)
     msg = format_report_for_manager(report, items, display_id)
 
     redirect_mode = settings.NOTIFICATION_REDIRECT_MODE
     is_redirect = redirect_mode == "admin"
 
     for tid, emp in employees.items():
-        if emp.get("rol") != "GERENTE_GENERAL":
+        if emp.get("rol") != Role.GERENTE_GENERAL:
             continue
         prefs = storage.get_notification_preferences(tid)
-        if prefs.get("mode") != "todo":
+        if prefs.get("mode") != NotificationMode.TODO:
             continue
         actual_tid = settings.ADMIN_TELEGRAM_ID if is_redirect else tid
         try:

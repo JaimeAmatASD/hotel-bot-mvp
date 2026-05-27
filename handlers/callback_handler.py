@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from handlers import get_employee
 from storage import save
+from config.enums import IncidentState, ReportType
 import notifier
 import permissions
 import storage
@@ -12,12 +13,16 @@ import sheets_sync
 
 
 _EXPECTED_FROM = {
-    "tomar":   ["ABIERTA"],
-    "proceso": ["ABIERTA", "ASIGNADA"],
-    "cerrar":  ["ABIERTA", "ASIGNADA", "EN_PROCESO"],
+    "tomar":   [IncidentState.ABIERTA],
+    "proceso": [IncidentState.ABIERTA, IncidentState.ASIGNADA],
+    "cerrar":  [IncidentState.ABIERTA, IncidentState.ASIGNADA, IncidentState.EN_PROCESO],
 }
 
-_STATE_MAP = {"tomar": "ASIGNADA", "proceso": "EN_PROCESO", "cerrar": "CERRADA"}
+_STATE_MAP = {
+    "tomar": IncidentState.ASIGNADA,
+    "proceso": IncidentState.EN_PROCESO,
+    "cerrar": IncidentState.CERRADA,
+}
 
 
 async def _handle_incident_action(query, context) -> None:
@@ -90,7 +95,7 @@ async def _handle_incident_action(query, context) -> None:
         {"nombre": reporter_name, "departamento": updated_incident.get("employee_dept", "")},
     )
 
-    display_id = storage.generate_display_id("INCIDENCIA", incident_id)
+    display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident_id)
     msg, keyboard = notifier.format_notification_message(
         incident=updated_incident,
         reporter=reporter,
@@ -137,7 +142,7 @@ async def _handle_report_confirm(query, context) -> None:
     context.user_data.pop("pending_report_items", None)
 
     report = storage.get_report_with_items(report_id)
-    display_id = storage.generate_display_id("REPORT", report_id)
+    display_id = storage.generate_display_id(ReportType.REPORT, report_id)
     nombre = employee.get("nombre", "").split()[0] or "empleado"
 
     await report_processor.notify_manager_report(context.bot, report, items, employees)
@@ -202,14 +207,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         nombre = employee["nombre"].split()[0] if employee else "empleado"
         await query.edit_message_text(f"✅ Guardado. Gracias, {nombre}.")
 
-        if result.get("tipo") == "INCIDENCIA":
+        if result.get("tipo") == ReportType.INCIDENCIA:
             storage.save_event(
                 incident_id=incident_id,
                 actor_telegram_id=employee.get("telegram_id", 0),
                 actor_name=employee.get("nombre"),
                 actor_role=employee.get("rol", "EMPLEADO"),
                 action="created",
-                to_state="ABIERTA",
+                to_state=IncidentState.ABIERTA,
                 success=True,
             )
             incident = {
@@ -227,17 +232,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         tipo = result.get("tipo")
-        if tipo == "INCIDENCIA":
+        if tipo == ReportType.INCIDENCIA:
             fresh_inc = storage.get_incident(incident_id)
-            inc_display = storage.generate_display_id("INCIDENCIA", incident_id)
+            inc_display = storage.generate_display_id(ReportType.INCIDENCIA, incident_id)
             asyncio.create_task(
                 sheets_sync.sync_incidencia(fresh_inc, inc_display, context.bot_data.get("employees"))
             )
-        elif tipo == "GUEST_INTEL":
-            gi_display = storage.generate_display_id("GUEST_INTEL", incident_id)
+        elif tipo == ReportType.GUEST_INTEL:
+            gi_display = storage.generate_display_id(ReportType.GUEST_INTEL, incident_id)
             asyncio.create_task(sheets_sync.sync_guest_intel(result, employee, gi_display))
-        elif tipo == "OBSERVACION":
-            obs_display = storage.generate_display_id("OBSERVACION", incident_id)
+        elif tipo == ReportType.OBSERVACION:
+            obs_display = storage.generate_display_id(ReportType.OBSERVACION, incident_id)
             asyncio.create_task(sheets_sync.sync_observacion(result, employee, obs_display))
 
     elif action == "correct":

@@ -56,6 +56,9 @@ def main():
         )
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
+    import storage
+    storage.init_db()
+
     import sheets_sync
     sheets_sync.ensure_headers()
 

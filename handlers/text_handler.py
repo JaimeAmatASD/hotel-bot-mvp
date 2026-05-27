@@ -3,46 +3,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from brain import process_message
 from handlers import get_employee, format_summary, format_summary_with_warning, format_debug_block, CONFIRM_KEYBOARD
+from handlers._state import pop_previous
 from config.rules import CORRECTION_TIMEOUT_MINUTES
 from storage import get_debug_mode
 import storage
 import report_processor
-
-
-def _pop_followup_state(context) -> tuple[dict | None, bool]:
-    """Returns (previous_pending, timed_out). Clears followup state regardless."""
-    if not context.user_data.get("awaiting_followup"):
-        return None, False
-
-    started_at = context.user_data.get("followup_started_at")
-    previous = context.user_data.pop("pending", None)
-    context.user_data.pop("awaiting_followup", None)
-    context.user_data.pop("followup_started_at", None)
-
-    if started_at:
-        elapsed = datetime.now() - datetime.fromisoformat(started_at)
-        if elapsed > timedelta(minutes=CORRECTION_TIMEOUT_MINUTES):
-            return None, True
-
-    return previous, False
-
-
-def _pop_correction_state(context) -> tuple[dict | None, bool]:
-    """Returns (previous_pending, timed_out). Clears correction state regardless."""
-    if not context.user_data.get("awaiting_correction"):
-        return None, False
-
-    started_at = context.user_data.get("correction_started_at")
-    previous = context.user_data.pop("pending", None)
-    context.user_data.pop("awaiting_correction", None)
-    context.user_data.pop("correction_started_at", None)
-
-    if started_at:
-        elapsed = datetime.now() - datetime.fromisoformat(started_at)
-        if elapsed > timedelta(minutes=CORRECTION_TIMEOUT_MINUTES):
-            return None, True
-
-    return previous, False
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -141,9 +106,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tid = update.effective_user.id
     debug_mode = get_debug_mode(tid)
 
-    previous_context, timed_out = _pop_followup_state(context)
-    if previous_context is None and not timed_out:
-        previous_context, timed_out = _pop_correction_state(context)
+    state = pop_previous(context)
+    previous_context, timed_out = state.previous, state.timed_out
 
     if timed_out:
         await update.message.reply_text(

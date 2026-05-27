@@ -7,6 +7,7 @@ from storage import (
     get_observations_for_room, search_classifications,
 )
 from permissions import get_role, filter_visible_incidents, can_query_department, _incident_department
+from config.enums import IncidentState, Role, NotificationMode
 from handlers import (
     format_incident_list, format_room_view, get_help_text, format_incident_history,
 )
@@ -46,7 +47,7 @@ async def handle_notificaciones(update: Update, context: ContextTypes.DEFAULT_TY
     employees = context.bot_data.get("employees", {})
     role = get_role(tid, employees)
 
-    if role != "GERENTE_GENERAL":
+    if role != Role.GERENTE_GENERAL:
         await update.message.reply_text("Este comando es solo para el gerente general.")
         return
 
@@ -72,7 +73,7 @@ async def handle_notificaciones(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     cmd = args[0].lower()
-    valid_modes = {"todo", "criticas", "solo_criticas", "nada"}
+    valid_modes = {m.value for m in NotificationMode}
 
     if cmd in valid_modes:
         set_notification_mode(tid, cmd)
@@ -133,9 +134,9 @@ async def handle_hab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     all_incidents = get_incidents_for_room(room)
     visible = filter_visible_incidents(user, all_incidents) if user else all_incidents
 
-    open_states = {"ABIERTA", "ASIGNADA", "EN_PROCESO"}
-    incidents_open = [i for i in visible if (i.get("estado") or "ABIERTA") in open_states]
-    incidents_closed = [i for i in visible if (i.get("estado") or "ABIERTA") == "CERRADA"]
+    open_states = {IncidentState.ABIERTA, IncidentState.ASIGNADA, IncidentState.EN_PROCESO}
+    incidents_open = [i for i in visible if (i.get("estado") or IncidentState.ABIERTA) in open_states]
+    incidents_closed = [i for i in visible if (i.get("estado") or IncidentState.ABIERTA) == IncidentState.CERRADA]
 
     guest_intel = get_guest_intel_for_room(room)
     observations = get_observations_for_room(room)
@@ -230,11 +231,11 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if user:
-            role = user.get("rol", "EMPLEADO")
-            if role == "EMPLEADO" and report.get("employee_telegram_id") != tid:
+            role = user.get("rol", Role.EMPLEADO)
+            if role == Role.EMPLEADO and report.get("employee_telegram_id") != tid:
                 await update.message.reply_text("No tenés permiso para ver ese reporte.")
                 return
-            if role == "ENCARGADO":
+            if role == Role.ENCARGADO:
                 report_dept = report.get("employee_department")
                 if report_dept and report_dept != user.get("departamento"):
                     await update.message.reply_text("No tenés permiso para ver ese reporte.")

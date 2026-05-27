@@ -9,6 +9,8 @@ from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 
+from config.enums import IncidentState, ReportType
+
 logger = logging.getLogger(__name__)
 
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -88,7 +90,7 @@ def _sync_incidencia_sync(incident: dict, display_id: str, employees: dict | Non
         incident.get("categoria", "") or "",
         incident.get("prioridad", "") or "",
         incident.get("descripcion", "") or "",
-        incident.get("estado", "ABIERTA"),
+        incident.get("estado", IncidentState.ABIERTA),
         assignee_name,
         datetime.now().isoformat(timespec="seconds"),
         "Sí" if incident.get("photo_path") else "No",
@@ -131,9 +133,9 @@ def _sync_observacion_sync(result: dict, employee: dict, display_id: str) -> Non
 
 def _sync_reporte_sync(report: dict, items: list[dict], display_id: str) -> None:
     ws = _get_worksheet("Reportes de turno")
-    n_inc = sum(1 for i in items if i.get("tipo") == "INCIDENCIA")
-    n_gi  = sum(1 for i in items if i.get("tipo") == "GUEST_INTEL")
-    n_obs = sum(1 for i in items if i.get("tipo") == "OBSERVACION")
+    n_inc = sum(1 for i in items if i.get("tipo") == ReportType.INCIDENCIA)
+    n_gi  = sum(1 for i in items if i.get("tipo") == ReportType.GUEST_INTEL)
+    n_obs = sum(1 for i in items if i.get("tipo") == ReportType.OBSERVACION)
     desglose_parts = []
     if n_inc: desglose_parts.append(f"{n_inc} INC")
     if n_gi:  desglose_parts.append(f"{n_gi} GI")

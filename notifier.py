@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -5,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import storage
 import permissions
 from config import settings
+from config.enums import IncidentState, ReportType, NotificationMode, Priority, Role
 from handlers import PRIORIDAD_EMOJI, TIPO_EMOJI
 
 
@@ -25,10 +27,10 @@ def build_keyboard_for_state(
 ) -> InlineKeyboardMarkup | None:
     cb = lambda action: f"incident_action:{incident_id}:{action}"
     buttons_by_state = {
-        "ABIERTA":    [("🙋 Tomar", cb("tomar")), ("⏳ En proceso", cb("proceso")), ("✅ Cerrar", cb("cerrar"))],
-        "ASIGNADA":   [("⏳ En proceso", cb("proceso")), ("✅ Cerrar", cb("cerrar"))],
-        "EN_PROCESO": [("✅ Cerrar", cb("cerrar"))],
-        "CERRADA":    [],
+        IncidentState.ABIERTA:    [("🙋 Tomar", cb("tomar")), ("⏳ En proceso", cb("proceso")), ("✅ Cerrar", cb("cerrar"))],
+        IncidentState.ASIGNADA:   [("⏳ En proceso", cb("proceso")), ("✅ Cerrar", cb("cerrar"))],
+        IncidentState.EN_PROCESO: [("✅ Cerrar", cb("cerrar"))],
+        IncidentState.CERRADA:    [],
     }
     buttons = buttons_by_state.get(estado, [])
     if not buttons:
@@ -44,7 +46,7 @@ def format_notification_message(
     actual_recipient_name: str | None = None,
     actual_recipient_telegram_id: int | None = None,
 ) -> tuple[str, InlineKeyboardMarkup | None]:
-    estado = incident.get("estado", "ABIERTA")
+    estado = incident.get("estado", IncidentState.ABIERTA)
     prioridad = incident.get("prioridad", "")
     categoria = incident.get("categoria", "")
     subcategoria = incident.get("subcategoria")
@@ -55,17 +57,17 @@ def format_notification_message(
 
     cat_str = f"{categoria} › {subcategoria}" if subcategoria else categoria
     prioridad_emoji = PRIORIDAD_EMOJI.get(prioridad, "")
-    tipo_emoji = TIPO_EMOJI.get("INCIDENCIA", "🔧")
+    tipo_emoji = TIPO_EMOJI.get(ReportType.INCIDENCIA, "🔧")
 
     # Header varies by state
-    if estado == "ABIERTA":
+    if estado == IncidentState.ABIERTA:
         header = f"🔔 Nueva incidencia — {incident_id_display}"
-    elif estado == "ASIGNADA":
+    elif estado == IncidentState.ASIGNADA:
         assignee_name = incident.get("_assignee_name", f"ID {incident.get('assigned_to_telegram_id', '?')}")
         header = f"🔔 {incident_id_display} — ASIGNADA a {assignee_name}"
-    elif estado == "EN_PROCESO":
+    elif estado == IncidentState.EN_PROCESO:
         header = f"🔔 {incident_id_display} — EN PROCESO"
-    elif estado == "CERRADA":
+    elif estado == IncidentState.CERRADA:
         header = f"🔔 {incident_id_display} — ✅ CERRADA"
     else:
         header = f"🔔 {incident_id_display}"
@@ -79,18 +81,18 @@ def format_notification_message(
         f"Reportado por: {reporter_name} ({reporter_dept})",
     ]
 
-    if estado == "ABIERTA":
+    if estado == IncidentState.ABIERTA:
         created_at = incident.get("timestamp")
         if created_at:
             lines.append(f"Hace: {_time_ago(created_at)}")
-    elif estado in ("ASIGNADA", "EN_PROCESO"):
+    elif estado in (IncidentState.ASIGNADA, IncidentState.EN_PROCESO):
         created_at = incident.get("timestamp")
         if created_at:
             lines.append(f"Hace: {_time_ago(created_at)}")
         assigned_at = incident.get("assigned_at")
         if assigned_at:
             lines.append(f"Asignado: hace {_time_ago(assigned_at)}")
-    elif estado == "CERRADA":
+    elif estado == IncidentState.CERRADA:
         assignee_name = incident.get("_assignee_name", "")
         if assignee_name:
             lines.append(f"Resuelta por: {assignee_name}")
@@ -115,17 +117,17 @@ def format_notification_message(
 def _should_notify_gerente(incident: dict, prefs: dict) -> bool:
     """Aplica filtros del gerente. CRITICA siempre pasa."""
     prioridad = incident.get("prioridad", "")
-    mode = prefs.get("mode", "criticas")
+    mode = prefs.get("mode", NotificationMode.CRITICAS)
 
-    if prioridad == "CRITICA":
+    if prioridad == Priority.CRITICA:
         return True
-    if mode == "nada":
+    if mode == NotificationMode.NADA:
         return False
-    if mode == "solo_criticas":
+    if mode == NotificationMode.SOLO_CRITICAS:
         return False
-    if mode == "criticas":
-        return prioridad == "ALTA"
-    if mode == "todo":
+    if mode == NotificationMode.CRITICAS:
+        return prioridad == Priority.ALTA
+    if mode == NotificationMode.TODO:
         excluded = prefs.get("excluded_departments", [])
         return incident.get("categoria") not in excluded
     return True
@@ -195,56 +197,66 @@ async def send_notification_with_logging(
         )
 
 
+async def _notify_one_recipient(
+    bot, incident, reporter_employee, employees, tid,
+    redirect_mode, is_redirect, display_id, incident_id,
+):
+    emp = employees.get(tid)
+    if not emp:
+        return
+
+    rol = emp.get("rol", Role.EMPLEADO)
+    if rol == Role.GERENTE_GENERAL:
+        prefs = storage.get_notification_preferences(tid)
+        if not _should_notify_gerente(incident, prefs):
+            return
+
+    actual_tid = settings.ADMIN_TELEGRAM_ID if is_redirect else tid
+    recipient_name = emp.get("nombre", "")
+
+    msg, keyboard = format_notification_message(
+        incident=incident,
+        reporter=reporter_employee,
+        incident_id_display=display_id,
+        is_redirect=is_redirect,
+        actual_recipient_name=recipient_name if is_redirect else None,
+        actual_recipient_telegram_id=tid,
+    )
+
+    await send_notification_with_logging(
+        bot=bot,
+        recipient_telegram_id=tid,
+        actual_recipient_telegram_id=actual_tid,
+        message=msg,
+        photo_path=incident.get("photo_path"),
+        incident_id=incident_id,
+        redirect_mode=redirect_mode,
+        reply_markup=keyboard,
+    )
+
+
 async def notify_incident(
     bot,
     incident: dict,
     employees: dict,
     reporter_employee: dict,
 ) -> None:
-    if incident.get("tipo") != "INCIDENCIA":
+    if incident.get("tipo") != ReportType.INCIDENCIA:
         return
 
     incident_id = incident["id"]
-    display_id = storage.generate_display_id("INCIDENCIA", incident_id)
+    display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident_id)
     redirect_mode = settings.NOTIFICATION_REDIRECT_MODE
     is_redirect = redirect_mode == "admin"
 
     recipient_ids = permissions.get_notification_recipients(incident, employees)
 
-    for tid in recipient_ids:
-        emp = employees.get(tid)
-        if not emp:
-            continue
-
-        rol = emp.get("rol", "EMPLEADO")
-
-        if rol == "GERENTE_GENERAL":
-            prefs = storage.get_notification_preferences(tid)
-            if not _should_notify_gerente(incident, prefs):
-                continue
-
-        actual_tid = settings.ADMIN_TELEGRAM_ID if is_redirect else tid
-        recipient_name = emp.get("nombre", "")
-
-        msg, keyboard = format_notification_message(
-            incident=incident,
-            reporter=reporter_employee,
-            incident_id_display=display_id,
-            is_redirect=is_redirect,
-            actual_recipient_name=recipient_name if is_redirect else None,
-            actual_recipient_telegram_id=tid,
-        )
-
-        await send_notification_with_logging(
-            bot=bot,
-            recipient_telegram_id=tid,
-            actual_recipient_telegram_id=actual_tid,
-            message=msg,
-            photo_path=incident.get("photo_path"),
-            incident_id=incident_id,
-            redirect_mode=redirect_mode,
-            reply_markup=keyboard,
-        )
+    await asyncio.gather(
+        *[_notify_one_recipient(bot, incident, reporter_employee, employees, tid,
+                                redirect_mode, is_redirect, display_id, incident_id)
+          for tid in recipient_ids],
+        return_exceptions=True,
+    )
 
 
 async def notify_employee_state_change(
@@ -258,18 +270,18 @@ async def notify_employee_state_change(
     from handlers import build_timeline_text, calculate_total_time
 
     reporter_name = incident.get("employee_name", "")
-    display_id = storage.generate_display_id("INCIDENCIA", incident["id"])
+    display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident["id"])
     descripcion = incident.get("descripcion", "")
     ubicacion = incident.get("ubicacion", "")
     short_desc = descripcion[:30] + "…" if len(descripcion) > 30 else descripcion
 
     reporter_first = reporter_name.split()[0] if reporter_name else "empleado"
 
-    if new_state == "ASIGNADA":
+    if new_state == IncidentState.ASIGNADA:
         text = f"📬 {actor_name} se está ocupando de tu reporte {display_id} ({short_desc}, {ubicacion})."
-    elif new_state == "EN_PROCESO":
+    elif new_state == IncidentState.EN_PROCESO:
         text = f"📬 {actor_name} está resolviendo tu reporte {display_id}."
-    elif new_state == "CERRADA":
+    elif new_state == IncidentState.CERRADA:
         events = storage.get_events_for_incident(incident["id"])
         total_time = calculate_total_time(events)
         timeline = build_timeline_text(events)

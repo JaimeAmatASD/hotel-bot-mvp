@@ -82,6 +82,7 @@ def test_debug_mode_sqlite_persistence(tmp_path, monkeypatch):
     import storage
 
     monkeypatch.setattr(storage, "DB_PATH", tmp_path / "test.db")
+    storage.init_db()
 
     assert storage.get_debug_mode(999) is False
 
