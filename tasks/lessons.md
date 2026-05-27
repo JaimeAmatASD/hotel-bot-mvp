@@ -111,13 +111,14 @@ posterior en SQLite.
 
 ## Sprint B.3 — Botones de acción (2026-05-16)
 
-### callback_data complejo: incluir todo lo necesario en el string
+### callback_data: solo identidad de objetos, nunca del sujeto
 
-Para callbacks de incidencia: `incident_action:{incident_id}:{sub_action}:{actor_telegram_id}`.
-La alternativa (guardar en SQLite + recuperar por incident_id) añade complejidad sin beneficio.
-El string resultante (~40 chars) queda bien por debajo del límite de 64 bytes de Telegram.
-Regla: mientras el callback_data quepa en 64 bytes, preferir Opción A (todo en el string)
-sobre Opción B (tabla auxiliar). Si supera el límite, ahí sí usar tabla.
+Para callbacks de incidencia: `incident_action:{incident_id}:{sub_action}`.
+El actor se obtiene SIEMPRE de `query.from_user.id` — nunca incluirlo en callback_data
+porque ese campo viene del cliente y puede manipularse. Ver L-H1 (Sprint B.5.1).
+El string resultante (~35 chars) queda bien por debajo del límite de 64 bytes de Telegram.
+Regla: mientras el callback_data quepa en 64 bytes, preferir todo en el string sobre
+tabla auxiliar. Si supera el límite, ahí sí usar tabla.
 
 ### Patrón de edición de mensaje original para reflejar cambio de estado
 
@@ -295,3 +296,38 @@ collection — código a nivel de módulo con efectos externos se ejecuta aunque
 esos tests, aumentando latencia y costo en cada corrida de la suite. Usar
 `@pytest.mark.integration` + `addopts = -m "not integration"` en pytest.ini para aislar
 estos tests de la suite default.
+
+## Sprint B.8 — Google Sheets sync (2026-05-25)
+
+### L-B8-1: Capa de visibilidad que nunca puede tumbar la fuente de verdad
+
+Cuando se añade un sistema externo como espejo (Sheets, webhook, bus de eventos), el orden
+de operaciones es crítico: 1) escribir en la fuente de verdad (SQLite), 2) confirmar al usuario,
+3) sync al espejo. Si el paso 3 falla, los pasos 1 y 2 ya pasaron — el dato no se pierde.
+Implementación: toda función de sync envuelta en try/except total que loguea pero nunca propaga.
+El caller usa `asyncio.create_task()` para disparar el sync como fire-and-forget sin esperar
+el resultado. Un fallo de red en Sheets no retarda ni tumba el handler de Telegram.
+
+### L-B8-2: asyncio.to_thread para I/O síncrono en handlers async
+
+gspread es una librería puramente síncrona. Llamarla directamente desde un handler async
+bloquea el event loop de python-telegram-bot durante toda la latencia de red (100-500ms),
+congelando todos los otros handlers activos. Solución: `asyncio.to_thread(fn_sincrona, args)`
+mueve la llamada a un thread del pool del OS, liberando el event loop.
+Patrón completo: función síncrona `_sync_*_sync()` + wrapper async `sync_*()` que llama
+`await asyncio.to_thread(...)`. El caller usa `asyncio.create_task(sync_*())` para no esperar.
+
+### L-B8-3: Google Sheets API requiere habilitación explícita en GCP
+
+Tener una cuenta de servicio con acceso al spreadsheet NO es suficiente. La Google Sheets API
+debe habilitarse explícitamente en el proyecto GCP de esa cuenta de servicio en
+`console.developers.google.com/apis/api/sheets.googleapis.com`. Sin esto, el error es un
+403 con "API has not been used in project X before or it is disabled" — confuso porque
+parece un error de permisos del spreadsheet cuando en realidad es de la API en GCP.
+
+### L-B8-4: Cachear handles de worksheets — no re-abrir en cada llamada
+
+Cada llamada a `spreadsheet.worksheet(name)` hace una request HTTP. Si se cachea el handle
+en un dict `_worksheets: dict[str, Worksheet]` con lazy init, solo se abre una vez por
+nombre de hoja por ciclo de vida del proceso. El cliente y el spreadsheet también se
+cachean como variables de módulo. El patrón: `if name not in _worksheets: ... _worksheets[name] = ws`.
