@@ -6,23 +6,38 @@ Bot Telegram para gestión de incidencias hoteleras con IA (Gemini + Groq Whispe
 - LLM: `google-genai` (NO `google-generativeai`) — modelo `gemini-2.5-flash`
 - STT: `groq` — Whisper Large v3 Turbo
 - Telegram: `python-telegram-bot` v20+ (async-first)
-- DB: SQLite via `storage.py`
+- DB: SQLite via `storage/` (paquete)
 - Sheets: `gspread` + `google-auth` — capa de visibilidad de solo-lectura via `sheets_sync.py`
 
-## Arquitectura
-- `permissions.py` — toda lógica de roles (EMPLEADO/ENCARGADO/GERENTE_GENERAL)
-- `classifier.py` — clasifica mensajes; puede devolver dict o list[dict] desde Gemini (se desenvuelve con `data[0]`)
-- `report_processor.py` — cierre manual de reportes de turno
-- `sheets_sync.py` — espejo a Google Sheets; SQLite es la única fuente de verdad; si Sheets falla, el bot no se cae
-- `handlers/` — no contienen lógica de negocio, solo enrutamiento
-- `notifier.py` — notificaciones a encargados/gerente; `build_keyboard_for_state(incident_id, estado)` sin actor en callback
-- `update_incident_state_atomic` en `storage.py` — ÚNICA función de transición de estado de incidencia
+## Arquitectura por capas
+
+```
+domain/      → entidades puras (Employee, Incident) — sin I/O, opcional
+config/      → enums (StrEnum) + rules constants
+permissions.py, brain.py, classifier.py, transcriber.py  → servicios de dominio/aplicación
+storage/     → paquete con módulos por dominio (schema, classifications, events, reports, ...)
+notifier/    → paquete: format, send, dispatch, filters, state_change, sender (port)
+presenters/  → formatters, keyboards, constants — capa de presentación
+handlers/    → routing Telegram delgado (text, audio, photo, callback, command)
+  _state.py, _flow.py, _corrections.py → helpers compartidos
+sheets_sync.py → espejo Google Sheets; SQLite sigue siendo la única fuente de verdad
+```
+
+## Invariantes críticos
+
+- **Callback format**: `incident_action:{id}:{action}` (3 partes). El actor SIEMPRE sale de `query.from_user.id`, nunca del callback.
+- **`update_incident_state_atomic` en `storage/events.py`** es la ÚNICA función de transición de estado de incidencia.
+- **`storage.init_db()` se llama una sola vez** al arranque del bot. Los tests inicializan explícitamente tras `patch.object(storage, "DB_PATH", ...)`.
+- **Magic strings prohibidos**: usar `config.enums` (IncidentState, ReportType, Role, Priority, NotificationMode). StrEnum mantiene compat con strings en SQLite.
+- **Notificaciones paralelas**: `notify_incident` usa `asyncio.gather(..., return_exceptions=True)`.
 
 ## Gotchas
+
 - `gh` CLI no está instalado; crear PRs manualmente en GitHub
-- `employees.json` — la mayoría de IDs son ficticios excepto los de testing real (Jaime 7391337590, Juan 8709342265)
-- Callback format: `incident_action:{id}:{action}` (3 partes) — el actor siempre sale de `query.from_user.id`, nunca del callback
-- `GOOGLE_SERVICE_ACCOUNT_JSON` y `SHEET_ID` requeridos en `.env` para el sync a Sheets
+- `employees.json` — la mayoría de IDs son ficticios excepto los de testing real (Jaime 7391337590, Juan 8709342265 GERENTE_GENERAL)
+- `GOOGLE_SERVICE_ACCOUNT_JSON` y `SHEET_ID` requeridos en `.env` para sync a Sheets (Google Sheets API habilitada en proyecto GCP 726520795387)
+- `test_cases.py`, `test_extended.py`, `test_cross_department.py` en raíz son **archivos de datos** (no tests) importados por `evaluate.py` y `dashboard.py` — no moverlos a `tests/`
 
 ## Workflow
+
 Escribir plan y esperar aprobación del usuario ANTES de implementar cualquier feature.

@@ -331,3 +331,109 @@ Cada llamada a `spreadsheet.worksheet(name)` hace una request HTTP. Si se cachea
 en un dict `_worksheets: dict[str, Worksheet]` con lazy init, solo se abre una vez por
 nombre de hoja por ciclo de vida del proceso. El cliente y el spreadsheet también se
 cachean como variables de módulo. El patrón: `if name not in _worksheets: ... _worksheets[name] = ws`.
+
+## Refactor integral post-B.8 (2026-05-27)
+
+### L-R1: Detectar duplicación con grep -A antes de extraer un helper
+
+Los 3 handlers (text/audio/photo) tenían `_pop_followup_state` y `_pop_correction_state`
+byte-por-byte idénticos (35 LoC × 3 archivos). Si la primera vez que duplicás copy-paste
+no extraés el helper, el costo del refactor se multiplica con cada archivo nuevo.
+Regla de detección: cuando hagas la 2da copia de una función, parar y mover a un módulo
+compartido. La 3ra copia ya es deuda técnica.
+
+### L-R2: StrEnum como migración sin riesgo de magic strings
+
+`StrEnum` (Python 3.11+) hereda de `str`, así que `IncidentState.ABIERTA == "ABIERTA"` es
+`True` y SQLite sigue almacenando strings idénticos. Esto permite sustitución gradual:
+escribir `IncidentState.ABIERTA` en código nuevo sin migrar las queries SQL ni romper
+datos existentes. El beneficio inmediato es autocompletado del IDE y errores de typo
+detectables por el linter, sin riesgo a runtime.
+
+### L-R3: init_db() lazy era un patrón defensivo que se convirtió en costo silencioso
+
+Llamar `init_db()` al principio de cada función pública parecía robusto (cada operación
+"se asegura" de que el schema existe), pero significa ejecutar 7 `CREATE IF NOT EXISTS` +
+varios `PRAGMA table_info` en cada query. Mover el init a una sola llamada en `bot.py`
+elimina el overhead. Para los tests, requirió un explícito `storage.init_db()` después
+de `monkeypatch.setattr(storage, "DB_PATH", ...)`. Aprendizaje: las llamadas defensivas
+en producción se acumulan; mejor un init explícito al startup que un init implícito en
+cada query.
+
+### L-R4: asyncio.gather con return_exceptions=True para envío paralelo robusto
+
+Iterar destinatarios con `await` en loop secuencializa lo que puede ser paralelo: si hay
+4 destinatarios y cada envío Telegram tarda ~200ms, son 800ms vs 200ms. La versión
+correcta es `asyncio.gather(*tasks, return_exceptions=True)`. Sin el flag, una excepción
+en cualquier task aborta el resto — con el flag, los demás siguen y los errores se
+recolectan como valores de retorno. Para notificaciones, donde "un destinatario falló"
+no debe impedir que los otros reciban, este flag es crítico.
+
+### L-R5: Re-exports del paquete __init__.py para preservar API legacy
+
+Cuando se divide `storage.py` (733 LoC) en paquete `storage/`, el archivo `__init__.py`
+del paquete debe re-exportar todo lo público:
+
+```python
+from storage._conn import DB_PATH, _conn
+from storage.classifications import save, get_incident, ...
+# ... etc
+```
+
+Así los callers existentes (`from storage import save`) siguen funcionando sin tocar nada.
+Es la mejor forma de hacer un refactor estructural grande con cero impacto en los callers.
+
+### L-R6: DB_PATH compartido entre __init__ y submódulos — lectura dinámica
+
+Cuando el paquete `storage/` re-exporta `DB_PATH` desde `storage/_conn.py`, los tests que
+hacen `patch.object(storage, "DB_PATH", new_path)` patchean el namespace del paquete,
+no el de `_conn.py`. Solución: en `_conn()`, leer DB_PATH dinámicamente del package
+namespace:
+
+```python
+def _conn():
+    import storage
+    db_path = getattr(storage, "DB_PATH", DB_PATH)
+    ...
+```
+
+Esto preserva la API de patcheo existente sin migrar todos los tests.
+
+### L-R7: Mocks en tests apuntan al módulo donde se USA el símbolo, no donde se define
+
+Al mover `get_debug_mode` de `text_handler.py` a `_flow.py`, los tests que hacían
+`patch("handlers.text_handler.get_debug_mode")` empezaron a fallar con AttributeError.
+La regla de Python mock: `patch("module.X")` requiere que `X` exista como atributo
+en `module`. Si `text_handler.py` ya no importa `get_debug_mode`, no se puede patchear ahí.
+La corrección es patchear `handlers._flow.get_debug_mode` (donde sí se importa y se usa).
+Esto es independiente de dónde se DEFINE la función — siempre se patchea donde se LEE.
+
+### L-R8: Port + concrete adapter + as_sender() — abstracción mínima, máximo retorno
+
+Para abstraer `bot.send_message`/`send_photo` detrás de un port `MessageSender`, el patrón
+costó ~50 LoC: ABC con 2 métodos, impl Telegram concreta, helper `as_sender()` que
+wrappa duck-type. Beneficios:
+- Tests pueden usar `FakeMessageSender` que registra llamadas sin mockear python-telegram-bot.
+- Día que se quiera meter WhatsApp/Slack: nuevo adapter, dispatch intacto.
+Regla: una abstracción justifica su costo cuando elimina el mock de un framework grande
+o cuando hay 2+ implementaciones reales en el horizonte.
+
+### L-R9: Dataclasses opcionales — adopción gradual sin migración masiva
+
+Crear `domain/entities.py` con `@dataclass Employee, Incident` no obliga a migrar los
+callers que usan dicts. Los entities tienen `from_dict()/from_row()` y conviven con el
+patrón dict por el tiempo que haga falta. Los tests nuevos los usan directamente
+(`Employee(telegram_id=1, nombre="X", ...)` es más legible que un dict de 5 campos).
+Migración real ocurre solo donde aporta — sin Big-Bang. Aprendizaje: una mejora opt-in
+puede sembrarse meses antes de ser obligatoria.
+
+### L-R10: Cuándo NO hacer Clean Architecture
+
+Después del refactor A/B/C el código ya estaba en 4 capas implícitas (domain en
+`permissions`+`config`, application en `brain`+`report_processor`, adapters en
+`storage`+`notifier`+`sheets_sync`, presentation en `handlers`). Pasar a Clean Architecture
+ortodoxo (ports + ABCs + DI container + mappers) habría sumado ~40% de LoC en ceremonia
+para un beneficio marginal en un proyecto de un dev con un bot.
+Regla: Clean Arch justifica su costo cuando hay (a) equipo grande, (b) bounded contexts
+múltiples, (c) intención real de swapear adapters (provider IA, base de datos, canal).
+Para un MVP solo, separar por capas mediante paquetes con re-exports es suficiente.

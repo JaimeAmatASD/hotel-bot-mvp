@@ -19,12 +19,33 @@ Rama activa: `feat/sprints-b3-b4-b5`
 | B.5.1 | Hardening pre-piloto (4 fixes de seguridad) | `dd14610` |
 | B.8 | Sync a Google Sheets (capa de visibilidad) | `27a2749` |
 
+## Refactor integral (post-B.8)
+
+| Fase | Descripción | Commit |
+|------|-------------|--------|
+| A | Enums (StrEnum × 5), state helpers dedup, init_db once, asyncio.gather paralelo | `910dbc3` |
+| B | Capas: `presenters/`, `handlers/_flow`+`_corrections`, `notifier/` (5 módulos) | `d7947e5` |
+| C | `storage/` por dominio (10 módulos) + scaffold de migrations versionadas | `93dddcc` |
+| Extras | `domain/entities.py` + `notifier/sender.py` (MessageSender port) | `f9ae5e9` |
+
+**Métricas post-refactor:**
+- Handlers: 564 → 152 LoC (-73%)
+- `storage.py` 733 LoC → paquete con módulos por dominio
+- 172 tests verdes (155 originales + 11 entities + 6 sender)
+- Cero cambios de comportamiento
+
 ## Próximo
 
-Sin sprint planificado. En fase de testeo con hotel real.
+Sin sprint planificado. **Fase de testeo con segundo teléfono (Juan, GERENTE_GENERAL).**
 
 ## Notas de testing activo
 
-- `employees.json` tiene 9 empleados: 7 ficticios + Jaime (7391337590) + Juan (8709342265, GERENTE_GENERAL)
-- `NOTIFICATION_REDIRECT_MODE=off` para producción real
+- `employees.json` tiene 9 empleados: 7 ficticios + Jaime (7391337590, ENCARGADO SPA) + Juan (8709342265, GERENTE_GENERAL)
+- `NOTIFICATION_REDIRECT_MODE=off` para producción real (sin banner de testing)
 - Google Sheets API habilitada en proyecto GCP 726520795387
+- 4 hojas en Sheet: Incidencias (UPSERT), Guest Intel, Observaciones, Reportes de turno
+
+## Decisiones explícitas pendientes (postpone hasta tener feedback de campo)
+
+- Reconstrucción full Clean Architecture: descartada. El refactor A/B/C cubre el 80% del valor sin la ceremonia. Solo justifica si se quiere swap de proveedor IA, multi-hotel o equipo de 3+ devs.
+- Schema SQLite: no se toca (`report_messages` deprecated quedó, `huesped_afectado` sigue como int). Migrations versionadas listas en `storage/migrations.py` para cuando haga falta.
