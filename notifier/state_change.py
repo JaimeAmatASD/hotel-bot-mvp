@@ -3,6 +3,7 @@ import storage
 from config import settings
 from config.enums import IncidentState, ReportType
 from presenters import build_timeline_text, calculate_total_time
+from notifier.sender import as_sender
 
 
 async def notify_employee_state_change(
@@ -52,7 +53,8 @@ async def notify_employee_state_change(
     is_redirect = redirect_mode == "admin"
     actual_tid = settings.ADMIN_TELEGRAM_ID if is_redirect else reporter_tid
 
+    sender = as_sender(bot)
     try:
-        await bot.send_message(chat_id=actual_tid, text=text)
+        await sender.send_text(chat_id=actual_tid, text=text)
     except Exception:
         pass

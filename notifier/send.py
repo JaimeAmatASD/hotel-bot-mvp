@@ -1,6 +1,8 @@
 """Telegram send + DB logging — the only place that does actual I/O."""
 import storage
 
+from notifier.sender import MessageSender, as_sender
+
 
 async def send_notification_with_logging(
     bot,
@@ -12,17 +14,17 @@ async def send_notification_with_logging(
     redirect_mode: str,
     reply_markup=None,
 ) -> None:
+    sender: MessageSender = as_sender(bot)
     try:
         if photo_path:
-            with open(photo_path, "rb") as f:
-                await bot.send_photo(
-                    chat_id=actual_recipient_telegram_id,
-                    photo=f,
-                    caption=message,
-                    reply_markup=reply_markup,
-                )
+            await sender.send_photo(
+                chat_id=actual_recipient_telegram_id,
+                photo_path=photo_path,
+                caption=message,
+                reply_markup=reply_markup,
+            )
         else:
-            await bot.send_message(
+            await sender.send_text(
                 chat_id=actual_recipient_telegram_id,
                 text=message,
                 reply_markup=reply_markup,

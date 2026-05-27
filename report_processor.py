@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import storage
 from config import settings
 from config.enums import IncidentState, ReportType, NotificationMode, Role
+from notifier.sender import as_sender
 
 
 def consolidate_recent_classifications(employee_name: str, hours: int) -> list[dict]:
@@ -96,6 +97,7 @@ async def notify_manager_report(bot, report: dict, items: list[dict], employees:
     redirect_mode = settings.NOTIFICATION_REDIRECT_MODE
     is_redirect = redirect_mode == "admin"
 
+    sender = as_sender(bot)
     for tid, emp in employees.items():
         if emp.get("rol") != Role.GERENTE_GENERAL:
             continue
@@ -104,6 +106,6 @@ async def notify_manager_report(bot, report: dict, items: list[dict], employees:
             continue
         actual_tid = settings.ADMIN_TELEGRAM_ID if is_redirect else tid
         try:
-            await bot.send_message(chat_id=actual_tid, text=msg)
+            await sender.send_text(chat_id=actual_tid, text=msg)
         except Exception:
             pass
