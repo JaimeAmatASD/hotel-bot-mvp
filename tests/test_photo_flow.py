@@ -74,7 +74,7 @@ async def test_photo_alone_classifies(tmp_path, monkeypatch):
     ctx.bot.get_file = AsyncMock(return_value=_patch_photo_download(tmp_path))
 
     with patch("handlers.photo_handler.process_message", return_value=result), \
-         patch("handlers.photo_handler.get_debug_mode", return_value=False):
+         patch("handlers._flow.get_debug_mode", return_value=False):
         await handle_photo(update, ctx)
 
     assert ctx.user_data["pending"]["result"]["tipo"] == "INCIDENCIA"
@@ -97,7 +97,7 @@ async def test_photo_with_caption(tmp_path, monkeypatch):
     ctx.bot.get_file = AsyncMock(return_value=_patch_photo_download(tmp_path))
 
     with patch("handlers.photo_handler.process_message", return_value=result) as mock_pm, \
-         patch("handlers.photo_handler.get_debug_mode", return_value=False):
+         patch("handlers._flow.get_debug_mode", return_value=False):
         await handle_photo(update, ctx)
 
     call_kwargs = mock_pm.call_args
@@ -124,7 +124,7 @@ async def test_caption_wins_over_image(tmp_path, monkeypatch):
     ctx.bot.get_file = AsyncMock(return_value=_patch_photo_download(tmp_path))
 
     with patch("handlers.photo_handler.process_message", return_value=guest_result), \
-         patch("handlers.photo_handler.get_debug_mode", return_value=False):
+         patch("handlers._flow.get_debug_mode", return_value=False):
         await handle_photo(update, ctx)
 
     assert ctx.user_data["pending"]["result"]["tipo"] == "GUEST_INTEL"
@@ -146,7 +146,7 @@ async def test_ambiguous_photo_asks_reformulate(tmp_path, monkeypatch):
     ctx.bot.get_file = AsyncMock(return_value=_patch_photo_download(tmp_path))
 
     with patch("handlers.photo_handler.process_message", return_value=low_conf), \
-         patch("handlers.photo_handler.get_debug_mode", return_value=False):
+         patch("handlers._flow.get_debug_mode", return_value=False):
         await handle_photo(update, ctx)
 
     assert "pending" not in ctx.user_data
@@ -189,7 +189,7 @@ async def test_photo_correction_preserves_image(tmp_path, monkeypatch):
     ctx.bot = AsyncMock()
 
     with patch("handlers.text_handler.process_message", return_value=corrected_result) as mock_pm, \
-         patch("handlers.text_handler.get_debug_mode", return_value=False):
+         patch("handlers._flow.get_debug_mode", return_value=False):
         await handle_text(update, ctx)
 
     call_kwargs = mock_pm.call_args.kwargs

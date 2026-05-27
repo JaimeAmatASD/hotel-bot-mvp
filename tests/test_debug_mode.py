@@ -44,7 +44,7 @@ async def test_debug_off_by_default():
     ctx = make_context()
 
     with patch("handlers.text_handler.process_message", return_value=BASE_RESULT), \
-         patch("handlers.text_handler.get_debug_mode", return_value=False):
+         patch("handlers._flow.get_debug_mode", return_value=False):
         await handle_text(update, ctx)
 
     text_sent = update.message.reply_text.call_args[0][0]
@@ -64,7 +64,7 @@ async def test_debug_on_shows_block():
     ctx = make_context()
 
     with patch("handlers.text_handler.process_message", return_value=BASE_RESULT), \
-         patch("handlers.text_handler.get_debug_mode", return_value=True):
+         patch("handlers._flow.get_debug_mode", return_value=True):
         await handle_text(update, ctx)
 
     text_sent = update.message.reply_text.call_args[0][0]
@@ -110,7 +110,7 @@ async def test_debug_isolation_between_users():
         return tid == 201  # solo A tiene debug on
 
     with patch("handlers.text_handler.process_message", return_value=BASE_RESULT), \
-         patch("handlers.text_handler.get_debug_mode", side_effect=mock_get_debug):
+         patch("handlers._flow.get_debug_mode", side_effect=mock_get_debug):
         await handle_text(update_a, ctx_a)
         await handle_text(update_b, ctx_b)
 

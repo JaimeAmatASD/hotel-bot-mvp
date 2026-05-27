@@ -3,10 +3,9 @@ from pathlib import Path
 from telegram import Update
 from telegram.ext import ContextTypes
 from brain import process_message
-from handlers import get_employee, format_summary, format_summary_with_warning, format_debug_block, CONFIRM_KEYBOARD
+from handlers import get_employee
 from handlers._state import pop_previous
-from storage import get_debug_mode
-import storage
+from handlers._flow import present_result
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -27,12 +26,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     caption = update.message.caption or ""
 
-    debug_mode = get_debug_mode(tid)
-
     state = pop_previous(context)
-    previous_context, timed_out = state.previous, state.timed_out
-
-    if timed_out:
+    if state.timed_out:
         await update.message.reply_text(
             "⏱ Pasó mucho tiempo desde la corrección anterior, lo proceso como mensaje nuevo."
         )
@@ -43,52 +38,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption,
         employee,
         image_path=str(photo_path),
-        previous_context=previous_context,
+        previous_context=state.previous,
     )
 
-    if result["tipo"] == "ERROR":
-        await update.message.reply_text(
-            f"❌ No pude procesar la foto.\n\n{result['descripcion']}\n\nIntentá de nuevo.",
-            parse_mode="HTML",
-        )
-        return
-
-    confianza = result.get("confianza", 1.0)
-
-    if confianza < 0.6:
-        await update.message.reply_text(
-            "🤔 No entendí bien qué muestra la foto. ¿Podés contarme de qué se trata?"
-        )
-        return
-
-    if confianza >= 0.8 and result.get("needs_followup"):
-        followup = result["needs_followup"]
-        context.user_data["pending"] = {
-            "result": result,
-            "original_text": caption,
-            "image_path": str(photo_path),
-        }
-        context.user_data["awaiting_followup"] = True
-        context.user_data["followup_started_at"] = datetime.now().isoformat()
-        await update.message.reply_text(followup["question"])
-        return
-
-    context.user_data["pending"] = {
-        "result": result,
-        "original_text": caption,
-        "image_path": str(photo_path),
-    }
-
-    if confianza < 0.8:
-        summary = format_summary_with_warning(result)
-    else:
-        summary = format_summary(result)
-
-    if debug_mode:
-        summary += "\n\n" + format_debug_block(result)
-
-    await update.message.reply_text(
-        f"{summary}\n\n<i>¿Es correcto?</i>",
-        parse_mode="HTML",
-        reply_markup=CONFIRM_KEYBOARD,
+    await present_result(
+        update, context, result,
+        original_text=caption, image_path=str(photo_path),
     )
