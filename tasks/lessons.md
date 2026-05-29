@@ -437,3 +437,35 @@ para un beneficio marginal en un proyecto de un dev con un bot.
 Regla: Clean Arch justifica su costo cuando hay (a) equipo grande, (b) bounded contexts
 múltiples, (c) intención real de swapear adapters (provider IA, base de datos, canal).
 Para un MVP solo, separar por capas mediante paquetes con re-exports es suficiente.
+
+## Testing hotelero pre-piloto (2026-05-28)
+
+### L-T1: Automatizar escenarios operativos, no solo unidades técnicas
+
+Los tests unitarios cubrían piezas sueltas (permisos, notificaciones, reportes, queries),
+pero faltaba una prueba que pensara como hotelero: empleado reporta, confirma, encargado
+toma/cierra, gerente consulta, reporte de turno queda auditable. `tests/test_hotel_scenarios.py`
+cubre esos flujos con SQLite temporal y mocks de Telegram/IA/Sheets. Beneficio: detecta
+roturas entre capas aunque cada módulo aislado siga pasando.
+
+### L-T2: Tests E2E fake deben cortar la red en los bordes correctos
+
+Para que el protocolo sea determinista, se parchean solo los bordes externos:
+`process_message` (IA), `notify_incident`/`notify_employee_state_change` (Telegram),
+y `sheets_sync.sync_*` (Google Sheets). La lógica real que queda bajo prueba es la valiosa:
+handlers, storage, permisos, formateo, eventos, reportes y queries.
+
+### L-T3: `/historial` descubrió un import faltante que la suite vieja no ejercitaba
+
+`handle_historial()` usaba `permissions.can_see_incident(...)`, pero el módulo
+`handlers/command_handler.py` solo importaba funciones concretas desde `permissions`, no
+el módulo `permissions`. Los tests anteriores probaban permisos y formatters por separado,
+pero no el comando real. El escenario "empleado no puede leer historial ajeno" lo detectó.
+Regla: cualquier comando crítico debe tener al menos un test que invoque el handler real.
+
+### L-T4: Fixtures de integration deben apuntar al layout real del repo
+
+Los tests de audio buscaban fixtures en `tests/integration/audios/`, pero los `.flac`
+versionados viven en `audios/`. Eso hacía que se saltaran dos tests reales aunque los
+fixtures existieran. La ruta correcta es desde `tests/integration/test_brain.py` hacia
+la raíz del repo: `Path(__file__).parent.parent.parent / "audios"`.

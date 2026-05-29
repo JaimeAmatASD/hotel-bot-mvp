@@ -8,6 +8,19 @@ Clasificador de mensajes operativos de hotel vía Telegram. Convierte texto y au
 - Transcriptor: Whisper Large v3 Turbo (Groq, gratuito)
 - Dashboard: Streamlit
 
+## Tests
+
+```bash
+# Suite normal sin llamadas reales a APIs externas
+venv/bin/pytest -q
+
+# Suite completa, incluyendo integration tests Gemini/Groq
+venv/bin/pytest -q -o addopts=''
+
+# Protocolo hotelero automatizado (empleado, encargado, gerente)
+venv/bin/pytest -q tests/test_hotel_scenarios.py
+```
+
 ## Uso del cerebro desde otro módulo
 
 ```python

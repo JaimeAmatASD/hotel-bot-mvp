@@ -31,8 +31,9 @@ Rama activa: `feat/sprints-b3-b4-b5`
 **Métricas post-refactor:**
 - Handlers: 564 → 152 LoC (-73%)
 - `storage.py` 733 LoC → paquete con módulos por dominio
-- 172 tests verdes (155 originales + 11 entities + 6 sender)
+- 178 tests verdes en suite normal (incluye 6 escenarios hoteleros E2E fake)
 - Cero cambios de comportamiento
+- Suite completa con integration: 183 tests totales si se corre `venv/bin/pytest -q -o addopts=''`
 
 ## Próximo
 
@@ -44,6 +45,8 @@ Sin sprint planificado. **Fase de testeo con segundo teléfono (Juan, GERENTE_GE
 - `NOTIFICATION_REDIRECT_MODE=off` para producción real (sin banner de testing)
 - Google Sheets API habilitada en proyecto GCP 726520795387
 - 4 hojas en Sheet: Incidencias (UPSERT), Guest Intel, Observaciones, Reportes de turno
+- `tests/test_hotel_scenarios.py` automatiza el protocolo manual hotelero: reportar, confirmar, consultar, actuar, cerrar, rechazar permisos, consolidar `/reporte` y auditar `/historial`
+- Bug pre-piloto corregido: `/historial` necesitaba importar el módulo `permissions` además de funciones puntuales
 
 ## Decisiones explícitas pendientes (postpone hasta tener feedback de campo)
 

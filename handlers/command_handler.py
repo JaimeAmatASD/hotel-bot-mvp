@@ -13,6 +13,7 @@ from handlers import (
 )
 import re
 import storage
+import permissions
 import report_processor
 
 

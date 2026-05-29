@@ -4,7 +4,7 @@ from pathlib import Path
 from brain import process_message
 from audio_test_cases import AUDIO_TEST_CASES
 
-AUDIOS_DIR = Path(__file__).parent / "audios"
+AUDIOS_DIR = Path(__file__).parent.parent.parent / "audios"
 MARIA = {"nombre": "María", "departamento": "HOUSEKEEPING", "idioma": "es"}
 ANDREI = {"nombre": "Andrei", "departamento": "MANTENIMIENTO", "idioma": "ro"}
 

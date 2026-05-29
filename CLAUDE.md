@@ -38,6 +38,13 @@ sheets_sync.py → espejo Google Sheets; SQLite sigue siendo la única fuente de
 - `GOOGLE_SERVICE_ACCOUNT_JSON` y `SHEET_ID` requeridos en `.env` para sync a Sheets (Google Sheets API habilitada en proyecto GCP 726520795387)
 - `test_cases.py`, `test_extended.py`, `test_cross_department.py` en raíz son **archivos de datos** (no tests) importados por `evaluate.py` y `dashboard.py` — no moverlos a `tests/`
 
+## Testing
+
+- Suite normal: `venv/bin/pytest -q` → 178 tests verdes, 5 integration deselected.
+- Suite completa con APIs reales: `venv/bin/pytest -q -o addopts=''` → incluye integration Gemini/Groq.
+- Escenarios hoteleros E2E fake: `tests/test_hotel_scenarios.py` cubre empleado → confirmación → notificación, consultas gerente, followup, ciclo tomar/proceso/cerrar, rechazo por permisos, reporte de turno y visibilidad de historial.
+- Integration tests de audio usan fixtures reales en `audios/`; no moverlos a `tests/integration/audios/`.
+
 ## Workflow
 
 Escribir plan y esperar aprobación del usuario ANTES de implementar cualquier feature.
