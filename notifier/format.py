@@ -20,15 +20,36 @@ def _time_ago(dt_str: str) -> str:
 def build_keyboard_for_state(incident_id: int, estado: str) -> InlineKeyboardMarkup | None:
     cb = lambda action: f"incident_action:{incident_id}:{action}"
     buttons_by_state = {
-        IncidentState.ABIERTA:    [("🙋 Tomar", cb("tomar")), ("⏳ En proceso", cb("proceso")), ("✅ Cerrar", cb("cerrar"))],
-        IncidentState.ASIGNADA:   [("⏳ En proceso", cb("proceso")), ("✅ Cerrar", cb("cerrar"))],
-        IncidentState.EN_PROCESO: [("✅ Cerrar", cb("cerrar"))],
-        IncidentState.CERRADA:    [],
+        IncidentState.NUEVA:      [[("👤 Asignar", cb("asignar")), ("🙋 Tomar", cb("tomar"))],
+                                   [("❌ Cancelar", cb("cancelar"))]],
+        IncidentState.ASIGNADA:   [[("⏳ Comenzar", cb("comenzar")), ("🔄 Reasignar", cb("reasignar"))],
+                                   [("❌ Cancelar", cb("cancelar"))]],
+        IncidentState.EN_PROCESO: [[("✅ Trabajo terminado", cb("terminado"))],
+                                   [("🔄 Reasignar", cb("reasignar")), ("❌ Cancelar", cb("cancelar"))]],
+        IncidentState.RESUELTA:   [[("✅ Validar y cerrar", cb("validar")), ("↩️ Reabrir", cb("reabrir"))],
+                                   [("❌ Cancelar", cb("cancelar"))]],
     }
-    buttons = buttons_by_state.get(estado, [])
-    if not buttons:
+    rows = buttons_by_state.get(estado)
+    if not rows:
         return None
-    return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data) for label, data in buttons]])
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(label, callback_data=data) for label, data in row] for row in rows]
+    )
+
+
+def build_assign_keyboard(incident_id: int, targets: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    """Picker de persona. `targets` = [(telegram_id, nombre), ...]."""
+    rows = [[InlineKeyboardButton(f"👷 {nombre}", callback_data=f"assign_to:{incident_id}:{tid}")]
+            for tid, nombre in targets]
+    rows.append([InlineKeyboardButton("🙋 Para mí", callback_data=f"incident_action:{incident_id}:tomar")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_dept_menu_keyboard(incident_id: int, departamentos: list[str]) -> InlineKeyboardMarkup:
+    """Menú de departamentos (solo gerente). Cada botón abre el picker de personas de ese depto."""
+    rows = [[InlineKeyboardButton(f"🏷 {dept}", callback_data=f"assign_dept:{incident_id}:{dept}")]
+            for dept in departamentos]
+    return InlineKeyboardMarkup(rows)
 
 
 def format_notification_message(

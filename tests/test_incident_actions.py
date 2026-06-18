@@ -148,40 +148,58 @@ class TestStorageTransitions(unittest.TestCase):
 
 class TestKeyboard(unittest.TestCase):
 
-    # 7 (del criterio). build_keyboard ABIERTA → 3 botones
-    def test_keyboard_abierta_tres_botones(self):
-        kb = build_keyboard_for_state(42, "ABIERTA")
-        self.assertIsNotNone(kb)
-        buttons = kb.inline_keyboard[0]
-        self.assertEqual(len(buttons), 3)
-        callbacks = [b.callback_data for b in buttons]
-        self.assertIn("incident_action:42:tomar", callbacks)
-        self.assertIn("incident_action:42:proceso", callbacks)
-        self.assertIn("incident_action:42:cerrar", callbacks)
+    def _callbacks(self, kb):
+        return [b.callback_data for row in kb.inline_keyboard for b in row]
 
-    # 8. build_keyboard ASIGNADA → 2 botones
-    def test_keyboard_asignada_dos_botones(self):
+    def test_keyboard_nueva(self):
+        kb = build_keyboard_for_state(42, "NUEVA")
+        cbs = self._callbacks(kb)
+        self.assertIn("incident_action:42:asignar", cbs)
+        self.assertIn("incident_action:42:tomar", cbs)
+        self.assertIn("incident_action:42:cancelar", cbs)
+
+    def test_keyboard_asignada(self):
         kb = build_keyboard_for_state(42, "ASIGNADA")
-        self.assertIsNotNone(kb)
-        self.assertEqual(len(kb.inline_keyboard[0]), 2)
+        cbs = self._callbacks(kb)
+        self.assertIn("incident_action:42:comenzar", cbs)
+        self.assertIn("incident_action:42:reasignar", cbs)
 
-    # 8 (criterio). build_keyboard EN_PROCESO → 1 botón
-    def test_keyboard_en_proceso_un_boton(self):
+    def test_keyboard_en_proceso(self):
         kb = build_keyboard_for_state(42, "EN_PROCESO")
-        self.assertIsNotNone(kb)
-        self.assertEqual(len(kb.inline_keyboard[0]), 1)
-        self.assertEqual(kb.inline_keyboard[0][0].callback_data, "incident_action:42:cerrar")
+        self.assertIn("incident_action:42:terminado", self._callbacks(kb))
 
-    # 9. build_keyboard CERRADA → None
+    def test_keyboard_resuelta(self):
+        cbs = self._callbacks(build_keyboard_for_state(42, "RESUELTA"))
+        self.assertIn("incident_action:42:validar", cbs)
+        self.assertIn("incident_action:42:reabrir", cbs)
+
     def test_keyboard_cerrada_none(self):
-        kb = build_keyboard_for_state(42, "CERRADA")
-        self.assertIsNone(kb)
+        self.assertIsNone(build_keyboard_for_state(42, "CERRADA"))
 
-    # Callback data dentro del límite de 64 bytes
-    def test_callback_data_dentro_limite_telegram(self):
-        kb = build_keyboard_for_state(9999, "ABIERTA")
-        for btn in kb.inline_keyboard[0]:
-            self.assertLessEqual(len(btn.callback_data.encode()), 64)
+    def test_keyboard_cancelada_none(self):
+        self.assertIsNone(build_keyboard_for_state(42, "CANCELADA"))
+
+    def test_callback_dentro_limite(self):
+        kb = build_keyboard_for_state(9999, "NUEVA")
+        for cb in self._callbacks(kb):
+            self.assertLessEqual(len(cb.encode()), 64)
+
+
+class TestAssignKeyboards(unittest.TestCase):
+    def test_assign_keyboard_lista_personas_y_para_mi(self):
+        from notifier import build_assign_keyboard
+        kb = build_assign_keyboard(7, [(222222222, "Andrei"), (444444444, "Carlos")])
+        cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
+        self.assertIn("assign_to:7:222222222", cbs)
+        self.assertIn("assign_to:7:444444444", cbs)
+        self.assertIn("incident_action:7:tomar", cbs)  # botón "Para mí"
+
+    def test_dept_menu_keyboard(self):
+        from notifier import build_dept_menu_keyboard
+        kb = build_dept_menu_keyboard(7, ["MANTENIMIENTO", "HOUSEKEEPING"])
+        cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
+        self.assertIn("assign_dept:7:MANTENIMIENTO", cbs)
+        self.assertIn("assign_dept:7:HOUSEKEEPING", cbs)
 
 
 class TestPermissions(unittest.TestCase):
