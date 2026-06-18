@@ -20,7 +20,7 @@ def _make_db(tmp_path):
     return db_path
 
 
-def _seed_incident(con, tipo="INCIDENCIA", categoria="Sanitarios", estado="ABIERTA"):
+def _seed_incident(con, tipo="INCIDENCIA", categoria="Sanitarios", estado="NUEVA"):
     """Insert a minimal incident row and return its id."""
     from datetime import datetime
     cur = con.execute(
@@ -39,8 +39,10 @@ def _seed_incident(con, tipo="INCIDENCIA", categoria="Sanitarios", estado="ABIER
 
 class TestStorageTransitions(unittest.TestCase):
 
-    ACTOR = {"telegram_id": 444444444, "nombre": "Carlos Encargado Mant", "rol": "ENCARGADO"}
-    ACTOR_B = {"telegram_id": 777777777, "nombre": "Alfredo Gerente", "rol": "GERENTE_GENERAL"}
+    ENC = {"telegram_id": 444444444, "nombre": "Carlos Encargado Mant",
+           "rol": "ENCARGADO", "departamento": "MANTENIMIENTO"}
+    EMP = {"telegram_id": 222222222, "nombre": "Andrei Popescu",
+           "rol": "EMPLEADO", "departamento": "MANTENIMIENTO"}
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -52,76 +54,96 @@ class TestStorageTransitions(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
 
-    def _seed(self, estado="ABIERTA", categoria="Sanitarios"):
+    def _seed(self, estado="NUEVA", categoria="MANTENIMIENTO"):
         with storage._conn() as con:
             return _seed_incident(con, categoria=categoria, estado=estado)
 
-    # 1. Tomar incidencia ABIERTA → ASIGNADA
-    def test_tomar_abierta_cambia_a_asignada(self):
-        iid = self._seed("ABIERTA")
-        result = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR, ["ABIERTA"])
-        self.assertTrue(result["success"])
-        self.assertEqual(result["to_state"], "ASIGNADA")
+    def test_asignar_a_otra_persona(self):
+        iid = self._seed("NUEVA")
+        r = storage.update_incident_state_atomic(
+            iid, "ASIGNADA", self.ENC, ["NUEVA"],
+            action="asignar", assignee_telegram_id=222222222)
+        self.assertTrue(r["success"])
         inc = storage.get_incident(iid)
         self.assertEqual(inc["estado"], "ASIGNADA")
-        self.assertEqual(int(inc["assigned_to_telegram_id"]), 444444444)
-        self.assertIsNotNone(inc["assigned_at"])
+        self.assertEqual(int(inc["assigned_to_telegram_id"]), 222222222)
+        self.assertEqual(int(inc["assigned_by"]), 444444444)
 
-    # 2. Tomar incidencia ya ASIGNADA → falla
-    def test_tomar_asignada_falla(self):
+    def test_tomar_para_si(self):
+        iid = self._seed("NUEVA")
+        storage.update_incident_state_atomic(
+            iid, "ASIGNADA", self.ENC, ["NUEVA"], action="tomar")
+        inc = storage.get_incident(iid)
+        self.assertEqual(int(inc["assigned_to_telegram_id"]), 444444444)
+
+    def test_comenzar_marca_en_proceso(self):
         iid = self._seed("ASIGNADA")
-        result = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR, ["ABIERTA"])
-        self.assertFalse(result["success"])
-        self.assertIn("ASIGNADA", result["reason"])
+        r = storage.update_incident_state_atomic(
+            iid, "EN_PROCESO", self.EMP, ["ASIGNADA"], action="comenzar")
+        self.assertTrue(r["success"])
+        self.assertEqual(storage.get_incident(iid)["estado"], "EN_PROCESO")
 
-    # 3. EN_PROCESO desde ABIERTA → cambia y asigna actor
-    def test_proceso_desde_abierta_asigna_actor(self):
-        iid = self._seed("ABIERTA")
-        result = storage.update_incident_state_atomic(iid, "EN_PROCESO", self.ACTOR, ["ABIERTA", "ASIGNADA"])
-        self.assertTrue(result["success"])
+    def test_terminado_guarda_resolved_by(self):
+        iid = self._seed("EN_PROCESO")
+        r = storage.update_incident_state_atomic(
+            iid, "RESUELTA", self.EMP, ["EN_PROCESO"], action="terminado")
+        self.assertTrue(r["success"])
         inc = storage.get_incident(iid)
-        self.assertEqual(inc["estado"], "EN_PROCESO")
-        self.assertEqual(int(inc["assigned_to_telegram_id"]), 444444444)
+        self.assertEqual(inc["estado"], "RESUELTA")
+        self.assertEqual(int(inc["resolved_by"]), 222222222)
+        self.assertIsNotNone(inc["resolved_at"])
 
-    # 4. EN_PROCESO desde ASIGNADA → cambia sin tocar assignee original
-    def test_proceso_desde_asignada_no_toca_assignee(self):
-        iid = self._seed("ABIERTA")
-        storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR, ["ABIERTA"])
-        storage.update_incident_state_atomic(iid, "EN_PROCESO", self.ACTOR_B, ["ABIERTA", "ASIGNADA"])
-        inc = storage.get_incident(iid)
-        self.assertEqual(inc["estado"], "EN_PROCESO")
-        # Original assignee preserved
-        self.assertEqual(int(inc["assigned_to_telegram_id"]), 444444444)
-
-    # 5. Cerrar desde ASIGNADA → CERRADA con closed_at y resolution_time
-    def test_cerrar_desde_asignada_guarda_tiempos(self):
-        iid = self._seed("ABIERTA")
-        storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR, ["ABIERTA"])
-        result = storage.update_incident_state_atomic(iid, "CERRADA", self.ACTOR, ["ABIERTA", "ASIGNADA", "EN_PROCESO"])
-        self.assertTrue(result["success"])
+    def test_validar_cierra_con_closed_by(self):
+        iid = self._seed("RESUELTA")
+        r = storage.update_incident_state_atomic(
+            iid, "CERRADA", self.ENC, ["RESUELTA"], action="validar")
+        self.assertTrue(r["success"])
         inc = storage.get_incident(iid)
         self.assertEqual(inc["estado"], "CERRADA")
+        self.assertEqual(int(inc["closed_by"]), 444444444)
         self.assertIsNotNone(inc["closed_at"])
         self.assertIsNotNone(inc["resolution_time_minutes"])
 
-    # 6. Cerrar ya CERRADA → falla
-    def test_cerrar_cerrada_falla(self):
-        iid = self._seed("CERRADA")
-        result = storage.update_incident_state_atomic(iid, "CERRADA", self.ACTOR, ["ABIERTA", "ASIGNADA", "EN_PROCESO"])
-        self.assertFalse(result["success"])
-        self.assertIn("CERRADA", result["reason"])
+    def test_reabrir_vuelve_a_asignada_sin_borrar_assignee(self):
+        iid = self._seed("NUEVA")
+        storage.update_incident_state_atomic(
+            iid, "ASIGNADA", self.ENC, ["NUEVA"],
+            action="asignar", assignee_telegram_id=222222222)
+        storage.update_incident_state_atomic(iid, "EN_PROCESO", self.EMP, ["ASIGNADA"], action="comenzar")
+        storage.update_incident_state_atomic(iid, "RESUELTA", self.EMP, ["EN_PROCESO"], action="terminado")
+        r = storage.update_incident_state_atomic(
+            iid, "ASIGNADA", self.ENC, ["RESUELTA"], action="reabrir")
+        self.assertTrue(r["success"])
+        inc = storage.get_incident(iid)
+        self.assertEqual(inc["estado"], "ASIGNADA")
+        self.assertEqual(int(inc["assigned_to_telegram_id"]), 222222222)
 
-    # 7. Cerrar desde ABIERTA también funciona
-    def test_cerrar_desde_abierta(self):
-        iid = self._seed("ABIERTA")
-        result = storage.update_incident_state_atomic(iid, "CERRADA", self.ACTOR, ["ABIERTA", "ASIGNADA", "EN_PROCESO"])
-        self.assertTrue(result["success"])
-        self.assertEqual(result["to_state"], "CERRADA")
+    def test_cancelar_guarda_motivo(self):
+        iid = self._seed("ASIGNADA")
+        r = storage.update_incident_state_atomic(
+            iid, "CANCELADA", self.ENC, ["NUEVA", "ASIGNADA", "EN_PROCESO", "RESUELTA"],
+            action="cancelar", cancel_reason="duplicada")
+        self.assertTrue(r["success"])
+        inc = storage.get_incident(iid)
+        self.assertEqual(inc["estado"], "CANCELADA")
+        self.assertEqual(int(inc["cancelled_by"]), 444444444)
+        self.assertEqual(inc["cancel_reason"], "duplicada")
 
-    # 8. get_incident devuelve None para id inexistente
+    def test_transicion_invalida_rechazada(self):
+        iid = self._seed("NUEVA")
+        r = storage.update_incident_state_atomic(
+            iid, "RESUELTA", self.EMP, ["EN_PROCESO"], action="terminado")
+        self.assertFalse(r["success"])
+        self.assertIn("NUEVA", r["reason"])
+
+    def test_doble_click_idempotente(self):
+        iid = self._seed("NUEVA")
+        storage.update_incident_state_atomic(iid, "ASIGNADA", self.ENC, ["NUEVA"], action="tomar")
+        r = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ENC, ["NUEVA"], action="tomar")
+        self.assertFalse(r["success"])
+
     def test_get_incident_inexistente(self):
-        result = storage.get_incident(99999)
-        self.assertIsNone(result)
+        self.assertIsNone(storage.get_incident(99999))
 
 
 class TestKeyboard(unittest.TestCase):

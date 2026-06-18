@@ -12,9 +12,11 @@ from storage._conn import DB_PATH, _conn
 
 
 _ACTION_FROM_STATE = {
-    IncidentState.ASIGNADA: "tomar",
-    IncidentState.EN_PROCESO: "en_proceso",
-    IncidentState.CERRADA: "cerrar",
+    IncidentState.ASIGNADA: "asignar",
+    IncidentState.EN_PROCESO: "comenzar",
+    IncidentState.RESUELTA: "terminado",
+    IncidentState.CERRADA: "validar",
+    IncidentState.CANCELADA: "cancelar",
 }
 
 
@@ -69,14 +71,21 @@ def update_incident_state_atomic(
     new_state: str,
     actor: dict,
     expected_from_states: list[str],
+    action: str | None = None,
+    assignee_telegram_id: int | None = None,
+    cancel_reason: str | None = None,
 ) -> dict:
-    """Atomic read-modify-write using BEGIN IMMEDIATE. Registers event in same transaction."""
+    """Atomic read-modify-write usando BEGIN IMMEDIATE. Registra el evento en la misma transacción.
+
+    `action` es el verbo (tomar/asignar/reasignar/reabrir/comenzar/terminado/validar/cancelar)
+    y determina los campos de trazabilidad a escribir. Si no se pasa, se infiere del estado.
+    """
     # Read DB_PATH dynamically so tests that patch storage.DB_PATH work.
     import storage
     actor_tid = actor.get("telegram_id", 0)
     actor_name = actor.get("nombre")
     actor_role = actor.get("rol", "EMPLEADO")
-    action_name = _ACTION_FROM_STATE.get(new_state, new_state.lower())
+    action_name = action or _ACTION_FROM_STATE.get(new_state, str(new_state).lower())
 
     db_path = storage.DB_PATH
     db_path.parent.mkdir(exist_ok=True)
@@ -94,7 +103,7 @@ def update_incident_state_atomic(
             con.execute("ROLLBACK")
             return {"success": False, "from_state": None, "to_state": None, "reason": "Incidencia no encontrada"}
 
-        current = row["estado"] or IncidentState.ABIERTA
+        current = row["estado"] or IncidentState.NUEVA
         now = datetime.now().isoformat(timespec="seconds")
 
         if current not in expected_from_states:
@@ -115,21 +124,29 @@ def update_incident_state_atomic(
                 "reason": f"La incidencia ya está en estado {current}",
             }
 
-        if new_state == IncidentState.ASIGNADA:
+        if new_state == IncidentState.ASIGNADA and action_name == "reabrir":
+            # Reabrir: solo cambia estado, conserva el asignado.
+            con.execute("UPDATE classifications SET estado=? WHERE id=?",
+                        (IncidentState.ASIGNADA, incident_id))
+        elif new_state == IncidentState.ASIGNADA:
+            assign_id = assignee_telegram_id or actor_tid
             con.execute(
-                "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, assigned_at=? WHERE id=?",
-                (IncidentState.ASIGNADA, actor_tid, now, incident_id),
+                "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, "
+                "assigned_at=?, assigned_by=? WHERE id=?",
+                (IncidentState.ASIGNADA, assign_id, now, actor_tid, incident_id),
             )
         elif new_state == IncidentState.EN_PROCESO:
             assign_id = row["assigned_to_telegram_id"] or actor_tid
-            if not row["assigned_to_telegram_id"]:
-                con.execute(
-                    "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, assigned_at=? WHERE id=?",
-                    (IncidentState.EN_PROCESO, assign_id, now, incident_id),
-                )
-            else:
-                con.execute("UPDATE classifications SET estado=? WHERE id=?",
-                            (IncidentState.EN_PROCESO, incident_id))
+            con.execute(
+                "UPDATE classifications SET estado=?, assigned_to_telegram_id=?, "
+                "assigned_at=COALESCE(assigned_at, ?) WHERE id=?",
+                (IncidentState.EN_PROCESO, assign_id, now, incident_id),
+            )
+        elif new_state == IncidentState.RESUELTA:
+            con.execute(
+                "UPDATE classifications SET estado=?, resolved_by=?, resolved_at=? WHERE id=?",
+                (IncidentState.RESUELTA, actor_tid, now, incident_id),
+            )
         elif new_state == IncidentState.CERRADA:
             try:
                 created_dt = datetime.fromisoformat(row["timestamp"])
@@ -137,8 +154,14 @@ def update_incident_state_atomic(
             except Exception:
                 resolution_minutes = None
             con.execute(
-                "UPDATE classifications SET estado=?, closed_at=?, resolution_time_minutes=? WHERE id=?",
-                (IncidentState.CERRADA, now, resolution_minutes, incident_id),
+                "UPDATE classifications SET estado=?, closed_at=?, closed_by=?, "
+                "resolution_time_minutes=? WHERE id=?",
+                (IncidentState.CERRADA, now, actor_tid, resolution_minutes, incident_id),
+            )
+        elif new_state == IncidentState.CANCELADA:
+            con.execute(
+                "UPDATE classifications SET estado=?, cancelled_by=?, cancel_reason=? WHERE id=?",
+                (IncidentState.CANCELADA, actor_tid, cancel_reason, incident_id),
             )
 
         con.execute(
