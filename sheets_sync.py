@@ -9,6 +9,7 @@ from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 
+import report_processor
 from config.enums import IncidentState, ReportType
 
 logger = logging.getLogger(__name__)
@@ -20,15 +21,15 @@ _spreadsheet: gspread.Spreadsheet | None = None
 _worksheets: dict[str, gspread.Worksheet] = {}
 
 _HEADERS = {
-    "Incidencias":       ["ID", "Fecha/hora creación", "Empleado", "Dpto. empleado",
+    "Incidencias":       ["ID", "Fecha/hora creación", "Empleado", "Departamento",
                           "Ubicación", "Categoría", "Prioridad", "Descripción",
                           "Estado", "Asignado a", "Última actualización", "Foto"],
     "Guest Intel":       ["ID", "Fecha/hora", "Empleado", "Habitación huésped",
-                          "Tipo nota", "Descripción", "Idioma original"],
+                          "Tipo de nota", "Descripción", "Idioma original"],
     "Observaciones":     ["ID", "Fecha/hora", "Empleado", "Departamento",
                           "Descripción", "Categoría"],
-    "Reportes de turno": ["ID", "Fecha/hora cierre", "Empleado",
-                          "Cantidad ítems", "Desglose", "Resumen"],
+    "Reportes de turno": ["ID", "Fecha/hora de cierre", "Empleado",
+                          "Cantidad de ítems", "Desglose", "Resumen / link"],
 }
 
 
@@ -147,7 +148,7 @@ def _sync_reporte_sync(report: dict, items: list[dict], display_id: str) -> None
         report.get("employee_name", ""),
         len(items),
         desglose,
-        f"/reporte {display_id}",
+        report_processor.format_report_for_sheet(items),
     ]
     ws.append_row(row)
 

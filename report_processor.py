@@ -62,6 +62,23 @@ def format_report_summary(items: list[dict], employee: dict, hours: int) -> tupl
     return "\n".join(lines), _CONFIRM_KEYBOARD
 
 
+def format_report_for_sheet(items: list[dict]) -> str:
+    """One-line plain-text summary of report items for the 'Resumen / link' column."""
+    parts = []
+    for item in items:
+        descripcion = (item.get("descripcion") or "")[:60]
+        tipo = item.get("tipo")
+        if tipo == ReportType.INCIDENCIA:
+            ubicacion = item.get("ubicacion", "")
+            estado = item.get("estado") or IncidentState.ABIERTA
+            parts.append(f"[INC] {ubicacion}: {descripcion} ({estado})")
+        elif tipo == ReportType.GUEST_INTEL:
+            parts.append(f"[GI] {descripcion}")
+        elif tipo == ReportType.OBSERVACION:
+            parts.append(f"[OBS] {descripcion}")
+    return " | ".join(parts)
+
+
 def format_report_for_manager(report: dict, items: list[dict], display_id: str) -> str:
     """Formats the manager notification for a closed report.
 

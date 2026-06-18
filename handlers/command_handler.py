@@ -7,7 +7,7 @@ from storage import (
     get_observations_for_room, search_classifications,
 )
 from permissions import get_role, filter_visible_incidents, can_query_department, _incident_department
-from config.enums import IncidentState, Role, NotificationMode
+from config.enums import IncidentState, Role, NotificationMode, ReportType
 from handlers import (
     format_incident_list, format_room_view, get_help_text, format_incident_history,
 )
@@ -246,11 +246,25 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📋 REP-{report_id} — {report.get('employee_name', '')}",
             f"Creado: {report.get('started_at', '')[:16]}",
             f"Ítems: {len(report.get('items', []))}",
+            "",
         ]
+        num = 1
         for item in report.get("items", []):
             tipo = item.get("tipo", "")
-            desc = (item.get("descripcion") or "")[:60]
-            lines.append(f"  • {tipo}: {desc}")
+            desc = item.get("descripcion") or ""
+            if tipo == ReportType.INCIDENCIA:
+                ubicacion = item.get("ubicacion", "")
+                prioridad = item.get("prioridad", "")
+                estado = item.get("estado", IncidentState.ABIERTA)
+                categoria = item.get("categoria", "")
+                lines.append(f"{num}. 🔧 {ubicacion} — {desc}")
+                lines.append(f"   Categoría: {categoria} | Prioridad: {prioridad} | Estado: {estado}")
+            elif tipo == ReportType.GUEST_INTEL:
+                lines.append(f"{num}. 👤 {desc}")
+            elif tipo == ReportType.OBSERVACION:
+                lines.append(f"{num}. 📊 {desc}")
+            lines.append("")
+            num += 1
         await update.message.reply_text("\n".join(lines))
         return
 

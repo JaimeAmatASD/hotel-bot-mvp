@@ -205,7 +205,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("pending", None)
 
         nombre = employee["nombre"].split()[0] if employee else "empleado"
-        await query.edit_message_text(f"✅ Guardado. Gracias, {nombre}.")
+
+        # Para INCIDENCIA y OBSERVACION, enviar respuesta separada (mantiene el resumen visible)
+        if result.get("tipo") in (ReportType.INCIDENCIA, ReportType.OBSERVACION):
+            await query.answer()
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"✅ Guardado. Gracias, {nombre}."
+            )
+        else:
+            # Para GUEST_INTEL, editar el mensaje original (se borra)
+            await query.edit_message_text(f"✅ Guardado. Gracias, {nombre}.")
 
         if result.get("tipo") == ReportType.INCIDENCIA:
             storage.save_event(

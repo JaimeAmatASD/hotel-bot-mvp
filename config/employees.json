@@ -3,9 +3,9 @@
     {
       "telegram_id": 7391337590,
       "nombre": "Jaime A",
-      "departamento": "SPA",
+      "departamento": "MANTENIMIENTO",
       "idioma": "es",
-      "rol": "ENCARGADO"
+      "rol": "EMPLEADO"
     },
     {
       "telegram_id": 111111111,
@@ -33,7 +33,7 @@
       "nombre": "Juan Encargado Mantenimiento",
       "departamento": "MANTENIMIENTO",
       "idioma": "es",
-      "rol": "GERENTE_GENERAL"
+      "rol": "ENCARGADO"
     },
     {
       "telegram_id": 444444444,
