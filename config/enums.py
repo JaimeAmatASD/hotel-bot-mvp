@@ -3,10 +3,12 @@ from enum import StrEnum
 
 
 class IncidentState(StrEnum):
-    ABIERTA = "ABIERTA"
+    NUEVA = "NUEVA"
     ASIGNADA = "ASIGNADA"
     EN_PROCESO = "EN_PROCESO"
+    RESUELTA = "RESUELTA"
     CERRADA = "CERRADA"
+    CANCELADA = "CANCELADA"
 
 
 class ReportType(StrEnum):
