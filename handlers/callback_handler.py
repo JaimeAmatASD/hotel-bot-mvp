@@ -5,34 +5,55 @@ from telegram.ext import ContextTypes
 from handlers import get_employee
 from storage import save
 from config.enums import IncidentState, ReportType
+from config.transitions import ACTION_TO_STATE, EXPECTED_FROM
 import notifier
 import permissions
 import storage
 import report_processor
 import sheets_sync
+from permissions import _incident_department
 
 
-_EXPECTED_FROM = {
-    "tomar":   [IncidentState.ABIERTA],
-    "proceso": [IncidentState.ABIERTA, IncidentState.ASIGNADA],
-    "cerrar":  [IncidentState.ABIERTA, IncidentState.ASIGNADA, IncidentState.EN_PROCESO],
-}
+def _attach_assignee_name(incident: dict, employees: dict) -> dict:
+    if incident.get("assigned_to_telegram_id"):
+        a = employees.get(int(incident["assigned_to_telegram_id"]))
+        if a:
+            incident["_assignee_name"] = a.get("nombre", "")
+    return incident
 
-_STATE_MAP = {
-    "tomar": IncidentState.ASIGNADA,
-    "proceso": IncidentState.EN_PROCESO,
-    "cerrar": IncidentState.CERRADA,
-}
+
+def _find_reporter(incident: dict, employees: dict) -> dict:
+    reporter_name = incident.get("employee_name", "")
+    return next(
+        (emp for emp in employees.values() if emp.get("nombre") == reporter_name),
+        {"nombre": reporter_name, "departamento": incident.get("employee_dept", "")},
+    )
+
+
+async def _refresh_message(query, incident, employees, actor_tid):
+    display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident["id"])
+    reporter = _find_reporter(incident, employees)
+    msg, keyboard = notifier.format_notification_message(
+        incident=incident, reporter=reporter, incident_id_display=display_id,
+        actual_recipient_telegram_id=actor_tid,
+    )
+    try:
+        if query.message.photo:
+            await query.edit_message_caption(caption=msg, reply_markup=keyboard)
+        else:
+            await query.edit_message_text(text=msg, reply_markup=keyboard)
+    except Exception:
+        pass
+    return display_id
 
 
 async def _handle_incident_action(query, context) -> None:
-    """Handles incident_action:{incident_id}:{sub_action} callbacks."""
+    """incident_action:{incident_id}:{action}. Action ∈ verbos de transición o asignar/reasignar."""
     parts = query.data.split(":")
     if len(parts) != 3:
         await query.answer("Formato de acción inválido", show_alert=True)
         return
-
-    _, incident_id_str, sub_action = parts
+    _, incident_id_str, action = parts
     try:
         incident_id = int(incident_id_str)
     except ValueError:
@@ -40,89 +61,120 @@ async def _handle_incident_action(query, context) -> None:
         return
 
     actor_telegram_id = query.from_user.id
-
     employees = context.bot_data["employees"]
     actor = employees.get(actor_telegram_id)
     incident = storage.get_incident(incident_id)
-
     if not actor or not incident:
         await query.answer("Error interno: datos no encontrados", show_alert=True)
         return
 
-    if not permissions.can_act_on_incident(actor, incident):
+    if not permissions.can_do_action(actor, incident, action):
         storage.save_event(
-            incident_id=incident_id,
-            actor_telegram_id=actor_telegram_id,
-            actor_name=actor.get("nombre"),
-            actor_role=actor.get("rol"),
+            incident_id=incident_id, actor_telegram_id=actor_telegram_id,
+            actor_name=actor.get("nombre"), actor_role=actor.get("rol"),
             action="action_rejected_no_permission",
-            from_state=incident.get("estado") or "ABIERTA",
-            success=False,
-            reason=f"rol {actor.get('rol')} no tiene permiso sobre {incident.get('categoria')}",
+            from_state=incident.get("estado") or "NUEVA", success=False,
+            reason=f"rol {actor.get('rol')} sin permiso para {action}",
         )
         await query.answer("No tenés permisos sobre esta incidencia", show_alert=True)
         return
 
-    new_state = _STATE_MAP.get(sub_action)
+    # asignar/reasignar abren el picker, no transicionan
+    if action in ("asignar", "reasignar"):
+        await _show_assign_picker(query, context, incident_id, incident, actor)
+        return
+
+    new_state = ACTION_TO_STATE.get(action)
     if not new_state:
         await query.answer("Acción desconocida", show_alert=True)
         return
 
     result = storage.update_incident_state_atomic(
-        incident_id=incident_id,
-        new_state=new_state,
-        actor=actor,
-        expected_from_states=_EXPECTED_FROM[sub_action],
+        incident_id=incident_id, new_state=new_state, actor=actor,
+        expected_from_states=EXPECTED_FROM[action], action=action,
     )
-
     if not result["success"]:
         await query.answer(result["reason"], show_alert=True)
         return
 
-    # Reload incident with updated fields
-    updated_incident = storage.get_incident(incident_id)
-
-    # Attach assignee name for display
-    if updated_incident.get("assigned_to_telegram_id"):
-        assignee = employees.get(int(updated_incident["assigned_to_telegram_id"]))
-        if assignee:
-            updated_incident["_assignee_name"] = assignee.get("nombre", "")
-
-    # Find the original reporter for the notification format
-    reporter_name = updated_incident.get("employee_name", "")
-    reporter = next(
-        (emp for emp in employees.values() if emp.get("nombre") == reporter_name),
-        {"nombre": reporter_name, "departamento": updated_incident.get("employee_dept", "")},
-    )
-
-    display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident_id)
-    msg, keyboard = notifier.format_notification_message(
-        incident=updated_incident,
-        reporter=reporter,
-        incident_id_display=display_id,
-        actual_recipient_telegram_id=actor_telegram_id,
-    )
-
-    try:
-        if query.message.photo:
-            await query.edit_message_caption(caption=msg, reply_markup=keyboard)
-        else:
-            await query.edit_message_text(text=msg, reply_markup=keyboard)
-    except Exception:
-        pass  # message unchanged is not a fatal error
+    updated = _attach_assignee_name(storage.get_incident(incident_id), employees)
+    display_id = await _refresh_message(query, updated, employees, actor_telegram_id)
 
     await notifier.notify_employee_state_change(
-        bot=context.bot,
-        incident=updated_incident,
-        new_state=new_state,
-        actor_name=actor.get("nombre", ""),
-        employees=employees,
+        bot=context.bot, incident=updated, new_state=new_state,
+        actor_name=actor.get("nombre", ""), employees=employees,
     )
+    if new_state == IncidentState.RESUELTA:
+        await notifier.notify_managers_resolved(
+            bot=context.bot, incident=updated, actor_name=actor.get("nombre", ""), employees=employees)
 
     await query.answer()
-    asyncio.create_task(
-        sheets_sync.sync_incidencia(updated_incident, display_id, employees)
+    asyncio.create_task(sheets_sync.sync_incidencia(updated, display_id, employees))
+
+
+async def _show_assign_picker(query, context, incident_id, incident, actor):
+    employees = context.bot_data["employees"]
+    if actor.get("rol") == "GERENTE_GENERAL":
+        depts = permissions.assignable_departments(actor, employees)
+        kb = notifier.build_dept_menu_keyboard(incident_id, depts)
+    else:
+        dept = _incident_department(incident)
+        targets = [(tid, e.get("nombre", "")) for tid, e in
+                   permissions.assignable_targets(actor, employees, dept)]
+        kb = notifier.build_assign_keyboard(incident_id, targets)
+    try:
+        await query.edit_message_reply_markup(reply_markup=kb)
+    except Exception:
+        pass
+    await query.answer("Elegí a quién asignar")
+
+
+async def _handle_assign_dept(query, context) -> None:
+    """assign_dept:{incident_id}:{DEPTO} — gerente eligió depto, mostrar personas."""
+    _, incident_id_str, dept = query.data.split(":")
+    incident_id = int(incident_id_str)
+    employees = context.bot_data["employees"]
+    actor = employees.get(query.from_user.id)
+    incident = storage.get_incident(incident_id)
+    if not actor or not incident or not permissions.can_do_action(actor, incident, "asignar"):
+        await query.answer("No tenés permisos", show_alert=True)
+        return
+    targets = [(tid, e.get("nombre", "")) for tid, e in
+               permissions.assignable_targets(actor, employees, dept)]
+    kb = notifier.build_assign_keyboard(incident_id, targets)
+    try:
+        await query.edit_message_reply_markup(reply_markup=kb)
+    except Exception:
+        pass
+    await query.answer()
+
+
+async def _handle_assign_to(query, context) -> None:
+    """assign_to:{incident_id}:{telegram_id} — asignación efectiva."""
+    _, incident_id_str, target_str = query.data.split(":")
+    incident_id = int(incident_id_str)
+    target_tid = int(target_str)
+    employees = context.bot_data["employees"]
+    actor = employees.get(query.from_user.id)
+    incident = storage.get_incident(incident_id)
+    if not actor or not incident or not permissions.can_do_action(actor, incident, "asignar"):
+        await query.answer("No tenés permisos", show_alert=True)
+        return
+
+    result = storage.update_incident_state_atomic(
+        incident_id=incident_id, new_state=IncidentState.ASIGNADA, actor=actor,
+        expected_from_states=EXPECTED_FROM["asignar"], action="asignar",
+        assignee_telegram_id=target_tid,
     )
+    if not result["success"]:
+        await query.answer(result["reason"], show_alert=True)
+        return
+
+    updated = _attach_assignee_name(storage.get_incident(incident_id), employees)
+    display_id = await _refresh_message(query, updated, employees, query.from_user.id)
+    await notifier.notify_assignee(bot=context.bot, incident=updated, employees=employees)
+    await query.answer("Asignada")
+    asyncio.create_task(sheets_sync.sync_incidencia(updated, display_id, employees))
 
 
 async def _handle_report_confirm(query, context) -> None:
@@ -182,6 +234,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_incident_action(query, context)
         return
 
+    if action.startswith("assign_to:"):
+        await _handle_assign_to(query, context)
+        return
+
+    if action.startswith("assign_dept:"):
+        await _handle_assign_dept(query, context)
+        return
+
     if action == "report_confirm_all":
         await _handle_report_confirm(query, context)
         return
@@ -224,7 +284,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 actor_name=employee.get("nombre"),
                 actor_role=employee.get("rol", "EMPLEADO"),
                 action="created",
-                to_state=IncidentState.ABIERTA,
+                to_state=IncidentState.NUEVA,
                 success=True,
             )
             incident = {

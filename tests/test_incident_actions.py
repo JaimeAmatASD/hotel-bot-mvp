@@ -270,7 +270,7 @@ async def test_callback_actor_is_from_user_id(tmp_path):
                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (datetime.now().isoformat(timespec="seconds"),
                  "Ana", "HK", "test", "INCIDENCIA", "ALTA",
-                 "MANTENIMIENTO", "Hab 1", "test", "ABIERTA"),
+                 "MANTENIMIENTO", "Hab 1", "test", "NUEVA"),
             )
             iid = cur.lastrowid
 
@@ -290,4 +290,4 @@ async def test_callback_actor_is_from_user_id(tmp_path):
         assert "permisos" in answer_text.lower()
 
         inc = storage.get_incident(iid)
-        assert inc["estado"] == "ABIERTA"
+        assert inc["estado"] == "NUEVA"
