@@ -281,3 +281,45 @@ async def test_notificacion_fallida_se_registra_como_failed():
     assert len(failed) >= 1
     assert failed[0]["error_message"] is not None
     assert "Telegram timeout" in failed[0]["error_message"]
+
+
+# ---------------------------------------------------------------------------
+# Work-order: notificación al asignado y a los managers
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_notify_assignee_envia_al_asignado():
+    from notifier import notify_assignee
+    employees = {222222222: {"telegram_id": 222222222, "nombre": "Andrei"}}
+    incident = {"id": 7, "assigned_to_telegram_id": 222222222,
+                "descripcion": "ventilador roto", "ubicacion": "Hab 77"}
+    bot = MagicMock()
+    sent = {}
+    class FakeSender:
+        async def send_text(self, chat_id, text): sent["chat"] = chat_id; sent["text"] = text
+    with patch("notifier.state_change.as_sender", return_value=FakeSender()), \
+         patch("notifier.state_change.settings") as s:
+        s.NOTIFICATION_REDIRECT_MODE = "off"
+        s.ADMIN_TELEGRAM_ID = 0
+        await notify_assignee(bot=bot, incident=incident, employees=employees)
+    assert sent["chat"] == 222222222
+    assert "ventilador" in sent["text"].lower() or "tarea" in sent["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_notify_managers_resolved_avisa_a_managers():
+    from notifier import notify_managers_resolved
+    employees = {
+        444444444: {"telegram_id": 444444444, "nombre": "Carlos", "departamento": "MANTENIMIENTO", "rol": "ENCARGADO"},
+        777777777: {"telegram_id": 777777777, "nombre": "Alfredo", "departamento": "GENERAL", "rol": "GERENTE_GENERAL"},
+    }
+    incident = {"id": 7, "categoria": "MANTENIMIENTO", "descripcion": "x", "ubicacion": "Hab 77"}
+    sent = []
+    class FakeSender:
+        async def send_text(self, chat_id, text): sent.append(chat_id)
+    with patch("notifier.state_change.as_sender", return_value=FakeSender()), \
+         patch("notifier.state_change.settings") as s:
+        s.NOTIFICATION_REDIRECT_MODE = "off"
+        s.ADMIN_TELEGRAM_ID = 0
+        await notify_managers_resolved(bot=MagicMock(), incident=incident, actor_name="Andrei", employees=employees)
+    assert 444444444 in sent and 777777777 in sent

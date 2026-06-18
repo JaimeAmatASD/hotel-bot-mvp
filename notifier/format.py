@@ -60,7 +60,7 @@ def format_notification_message(
     actual_recipient_name: str | None = None,
     actual_recipient_telegram_id: int | None = None,
 ) -> tuple[str, InlineKeyboardMarkup | None]:
-    estado = incident.get("estado", IncidentState.ABIERTA)
+    estado = incident.get("estado", IncidentState.NUEVA)
     prioridad = incident.get("prioridad", "")
     categoria = incident.get("categoria", "")
     subcategoria = incident.get("subcategoria")
@@ -73,15 +73,21 @@ def format_notification_message(
     prioridad_emoji = PRIORIDAD_EMOJI.get(prioridad, "")
     tipo_emoji = TIPO_EMOJI.get(ReportType.INCIDENCIA, "🔧")
 
-    if estado == IncidentState.ABIERTA:
+    if estado == IncidentState.NUEVA:
         header = f"🔔 Nueva incidencia — {incident_id_display}"
     elif estado == IncidentState.ASIGNADA:
         assignee_name = incident.get("_assignee_name", f"ID {incident.get('assigned_to_telegram_id', '?')}")
         header = f"🔔 {incident_id_display} — ASIGNADA a {assignee_name}"
     elif estado == IncidentState.EN_PROCESO:
         header = f"🔔 {incident_id_display} — EN PROCESO"
+    elif estado == IncidentState.RESUELTA:
+        assignee_name = incident.get("_assignee_name", "")
+        suffix = f" por {assignee_name}" if assignee_name else ""
+        header = f"🔔 {incident_id_display} — ✅ RESUELTA{suffix} (a validar)"
     elif estado == IncidentState.CERRADA:
         header = f"🔔 {incident_id_display} — ✅ CERRADA"
+    elif estado == IncidentState.CANCELADA:
+        header = f"🔔 {incident_id_display} — ❌ CANCELADA"
     else:
         header = f"🔔 {incident_id_display}"
 
@@ -94,11 +100,11 @@ def format_notification_message(
         f"Reportado por: {reporter_name} ({reporter_dept})",
     ]
 
-    if estado == IncidentState.ABIERTA:
+    if estado == IncidentState.NUEVA:
         created_at = incident.get("timestamp")
         if created_at:
             lines.append(f"Hace: {_time_ago(created_at)}")
-    elif estado in (IncidentState.ASIGNADA, IncidentState.EN_PROCESO):
+    elif estado in (IncidentState.ASIGNADA, IncidentState.EN_PROCESO, IncidentState.RESUELTA):
         created_at = incident.get("timestamp")
         if created_at:
             lines.append(f"Hace: {_time_ago(created_at)}")

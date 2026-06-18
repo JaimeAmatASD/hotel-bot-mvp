@@ -17,5 +17,9 @@ from notifier.format import (
 )
 from notifier.send import send_notification_with_logging
 from notifier.dispatch import notify_incident
-from notifier.state_change import notify_employee_state_change
+from notifier.state_change import (
+    notify_employee_state_change,
+    notify_assignee,
+    notify_managers_resolved,
+)
 from notifier.sender import MessageSender, TelegramMessageSender, as_sender

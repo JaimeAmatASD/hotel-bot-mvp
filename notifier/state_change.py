@@ -25,6 +25,8 @@ async def notify_employee_state_change(
         text = f"📬 {actor_name} se está ocupando de tu reporte {display_id} ({short_desc}, {ubicacion})."
     elif new_state == IncidentState.EN_PROCESO:
         text = f"📬 {actor_name} está resolviendo tu reporte {display_id}."
+    elif new_state == IncidentState.RESUELTA:
+        text = f"📬 {actor_name} marcó como resuelto tu reporte {display_id}. Pendiente de validación final."
     elif new_state == IncidentState.CERRADA:
         events = storage.get_events_for_incident(incident["id"])
         total_time = calculate_total_time(events)
@@ -58,3 +60,47 @@ async def notify_employee_state_change(
         await sender.send_text(chat_id=actual_tid, text=text)
     except Exception:
         pass
+
+
+import asyncio
+import permissions
+
+
+def _resolve_recipient(tid: int):
+    """Aplica redirect de testing."""
+    is_redirect = settings.NOTIFICATION_REDIRECT_MODE == "admin"
+    return settings.ADMIN_TELEGRAM_ID if is_redirect else tid
+
+
+async def notify_assignee(bot, incident: dict, employees: dict) -> None:
+    """Avisa a la persona recién asignada que tiene una tarea nueva."""
+    tid = incident.get("assigned_to_telegram_id")
+    if not tid:
+        return
+    tid = int(tid)
+    display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident["id"])
+    desc = incident.get("descripcion", "")
+    ubic = incident.get("ubicacion", "")
+    text = f"🔔 Nueva tarea asignada — {display_id}\n🔧 {desc}\n📍 {ubic}\nEntrá a tus pendientes para empezar."
+    sender = as_sender(bot)
+    try:
+        await sender.send_text(chat_id=_resolve_recipient(tid), text=text)
+    except Exception:
+        pass
+
+
+async def notify_managers_resolved(bot, incident: dict, actor_name: str, employees: dict) -> None:
+    """Avisa a los managers del depto que la incidencia fue marcada como resuelta (a validar)."""
+    display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident["id"])
+    desc = incident.get("descripcion", "")
+    text = f"✅ {actor_name} marcó como resuelto {display_id} ({desc}). Validá y cerrá cuando confirmes."
+    recipients = permissions.get_notification_recipients(incident, employees)
+    sender = as_sender(bot)
+
+    async def _send(tid):
+        try:
+            await sender.send_text(chat_id=_resolve_recipient(tid), text=text)
+        except Exception:
+            pass
+
+    await asyncio.gather(*(_send(t) for t in recipients), return_exceptions=True)
