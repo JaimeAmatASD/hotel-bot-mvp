@@ -13,8 +13,13 @@ logger = logging.getLogger(__name__)
 
 Migration = tuple[int, Union[str, Callable]]
 
-# Empty for now — current schema is assumed to be "v0" (managed by schema.init_db).
-MIGRATIONS: list[Migration] = []
+def _rename_abierta_to_nueva(con) -> None:
+    con.execute("UPDATE classifications SET estado='NUEVA' WHERE estado='ABIERTA'")
+
+
+MIGRATIONS: list[Migration] = [
+    (1, _rename_abierta_to_nueva),
+]
 
 
 def _ensure_meta_table(con) -> None:

@@ -99,10 +99,16 @@ def init_db():
             con.execute("ALTER TABLE classifications ADD COLUMN report_id INTEGER REFERENCES reports(id)")
         cls_cols = [row[1] for row in con.execute("PRAGMA table_info(classifications)").fetchall()]
         for col, default in [
-            ("estado", "ABIERTA"),
+            ("estado", "NUEVA"),
             ("assigned_to_telegram_id", None),
             ("assigned_at", None),
+            ("assigned_by", None),
+            ("resolved_by", None),
+            ("resolved_at", None),
             ("closed_at", None),
+            ("closed_by", None),
+            ("cancelled_by", None),
+            ("cancel_reason", None),
             ("resolution_time_minutes", None),
         ]:
             if col not in cls_cols:
