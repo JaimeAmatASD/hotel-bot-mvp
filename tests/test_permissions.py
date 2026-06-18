@@ -188,3 +188,58 @@ def test_employees_json_parsea_correctamente():
     assert roles == {"EMPLEADO", "ENCARGADO", "GERENTE_GENERAL"}
     assert sum(1 for e in empleados if e["rol"] == "GERENTE_GENERAL") >= 1
     assert sum(1 for e in empleados if e["rol"] == "ENCARGADO") >= 3
+
+
+# ---------------------------------------------------------------------------
+# can_do_action + targets de asignación (work-order)
+# ---------------------------------------------------------------------------
+
+from permissions import can_do_action, assignable_targets, assignable_departments
+
+EMP_MANT = {"telegram_id": 5001, "nombre": "Andrei", "departamento": "MANTENIMIENTO", "rol": "EMPLEADO"}
+ENC_MANT = EMPLOYEES[2001]
+GERENTE = EMPLOYEES[3001]
+
+INC_ASIGNADA_A_ANDREI = {"categoria": "MANTENIMIENTO", "assigned_to_telegram_id": 5001}
+INC_ASIGNADA_A_OTRO = {"categoria": "MANTENIMIENTO", "assigned_to_telegram_id": 9998}
+
+
+def test_asignado_puede_comenzar_su_tarea():
+    assert can_do_action(EMP_MANT, INC_ASIGNADA_A_ANDREI, "comenzar") is True
+    assert can_do_action(EMP_MANT, INC_ASIGNADA_A_ANDREI, "terminado") is True
+
+
+def test_empleado_no_asignado_no_puede_ejecutar():
+    assert can_do_action(EMP_MANT, INC_ASIGNADA_A_OTRO, "comenzar") is False
+
+
+def test_empleado_no_puede_gestionar_aunque_sea_asignado():
+    assert can_do_action(EMP_MANT, INC_ASIGNADA_A_ANDREI, "validar") is False
+    assert can_do_action(EMP_MANT, INC_ASIGNADA_A_ANDREI, "asignar") is False
+
+
+def test_encargado_puede_gestionar_su_depto():
+    assert can_do_action(ENC_MANT, {"categoria": "MANTENIMIENTO"}, "asignar") is True
+    assert can_do_action(ENC_MANT, {"categoria": "LIMPIEZA"}, "asignar") is False
+
+
+def test_gerente_puede_todo():
+    assert can_do_action(GERENTE, {"categoria": "LIMPIEZA"}, "validar") is True
+
+
+def test_assignable_targets_encargado_su_depto():
+    emps = {
+        5001: EMP_MANT,
+        2001: ENC_MANT,
+        2002: EMPLOYEES[2002],  # HK
+        1001: EMPLOYEES[1001],  # SPA empleado
+    }
+    targets = dict(assignable_targets(ENC_MANT, emps, "MANTENIMIENTO"))
+    assert 5001 in targets and 2001 in targets
+    assert 2002 not in targets and 1001 not in targets
+
+
+def test_assignable_departments_gerente_lista_todos():
+    emps = {5001: EMP_MANT, 2002: EMPLOYEES[2002]}
+    depts = assignable_departments(GERENTE, emps)
+    assert "MANTENIMIENTO" in depts and "HOUSEKEEPING" in depts

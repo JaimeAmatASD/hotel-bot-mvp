@@ -93,3 +93,47 @@ def can_query_department(user: dict, departamento: str) -> bool:
     if rol == Role.ENCARGADO:
         return user.get("departamento", "").upper() == departamento.upper()
     return False
+
+
+from config.transitions import MANAGEMENT_ACTIONS, EXECUTION_ACTIONS
+
+
+def _is_assignee(user: dict, incident: dict) -> bool:
+    assigned = incident.get("assigned_to_telegram_id")
+    if assigned is None:
+        return False
+    try:
+        return int(assigned) == int(user.get("telegram_id", -1))
+    except (TypeError, ValueError):
+        return False
+
+
+def can_do_action(user: dict, incident: dict, action: str) -> bool:
+    """Permiso unificado por acción.
+
+    - Acciones de gestión (asignar/tomar/reasignar/validar/reabrir/cancelar):
+      solo manager con alcance sobre la incidencia (`can_act_on_incident`).
+    - Acciones de ejecución (comenzar/terminado): el asignado, o un manager.
+    """
+    if action in EXECUTION_ACTIONS:
+        return _is_assignee(user, incident) or can_act_on_incident(user, incident)
+    if action in MANAGEMENT_ACTIONS:
+        return can_act_on_incident(user, incident)
+    return False
+
+
+def assignable_targets(actor: dict, employees: dict, departamento: str) -> list[tuple[int, dict]]:
+    """Empleados y encargados de `departamento` a quienes se les puede asignar una tarea."""
+    out = []
+    for tid, emp in employees.items():
+        if emp.get("departamento") == departamento and emp.get("rol", Role.EMPLEADO) in (Role.EMPLEADO, Role.ENCARGADO):
+            out.append((tid, emp))
+    return out
+
+
+def assignable_departments(actor: dict, employees: dict) -> list[str]:
+    """Departamentos a los que el actor puede asignar (solo el gerente usa el menú cross-depto)."""
+    return sorted({
+        emp.get("departamento") for emp in employees.values()
+        if emp.get("departamento") and emp.get("rol", Role.EMPLEADO) in (Role.EMPLEADO, Role.ENCARGADO)
+    })
