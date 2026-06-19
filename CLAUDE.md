@@ -25,11 +25,13 @@ sheets_sync.py → espejo Google Sheets; SQLite sigue siendo la única fuente de
 
 ## Invariantes críticos
 
-- **Callback format**: `incident_action:{id}:{action}` (3 partes). El actor SIEMPRE sale de `query.from_user.id`, nunca del callback.
-- **`update_incident_state_atomic` en `storage/events.py`** es la ÚNICA función de transición de estado de incidencia.
+- **Ciclo de vida (work-order, 6 estados)**: `NUEVA → ASIGNADA → EN_PROCESO → RESUELTA → CERRADA` (+ `CANCELADA` desde cualquier estado no terminal). `config/transitions.py` es la ÚNICA fuente de verdad de la máquina de estados (`ACTION_TO_STATE`, `EXPECTED_FROM`, `MANAGEMENT_ACTIONS`/`EXECUTION_ACTIONS`). Verbos: `tomar/asignar/reasignar/comenzar/terminado/validar/reabrir/cancelar`.
+- **Callback format**: 3 partes siempre — `incident_action:{id}:{action}`, `assign_to:{id}:{telegram_id}`, `assign_dept:{id}:{depto}`. El actor SIEMPRE sale de `query.from_user.id`, nunca del callback.
+- **`update_incident_state_atomic` en `storage/events.py`** es la ÚNICA función de transición de estado; recibe `action=` explícito y escribe trazabilidad (`assigned_by/resolved_by/closed_by/cancelled_by`). `reabrir` conserva el asignado.
+- **Permisos por acción**: `permissions.can_do_action(user, incident, action)`. Gestión (asignar/validar/etc.) = manager con alcance; ejecución (comenzar/terminado) = el asignado o un manager.
 - **`storage.init_db()` se llama una sola vez** al arranque del bot. Los tests inicializan explícitamente tras `patch.object(storage, "DB_PATH", ...)`.
 - **Magic strings prohibidos**: usar `config.enums` (IncidentState, ReportType, Role, Priority, NotificationMode). StrEnum mantiene compat con strings en SQLite.
-- **Notificaciones paralelas**: `notify_incident` usa `asyncio.gather(..., return_exceptions=True)`.
+- **Notificaciones paralelas**: `notify_incident` usa `asyncio.gather(..., return_exceptions=True)`. Al asignar → `notify_assignee`; al resolver → `notify_managers_resolved`; al cerrar → aviso al reporter (`notify_employee_state_change`).
 
 ## Gotchas
 
@@ -40,9 +42,9 @@ sheets_sync.py → espejo Google Sheets; SQLite sigue siendo la única fuente de
 
 ## Testing
 
-- Suite normal: `venv/bin/pytest -q` → 178 tests verdes, 5 integration deselected.
+- Suite normal: `venv/bin/pytest -q` → 205 tests verdes, 5 integration deselected.
 - Suite completa con APIs reales: `venv/bin/pytest -q -o addopts=''` → incluye integration Gemini/Groq.
-- Escenarios hoteleros E2E fake: `tests/test_hotel_scenarios.py` cubre empleado → confirmación → notificación, consultas gerente, followup, ciclo tomar/proceso/cerrar, rechazo por permisos, reporte de turno y visibilidad de historial.
+- Escenarios hoteleros E2E fake: `tests/test_hotel_scenarios.py` cubre empleado → confirmación → notificación, consultas gerente, followup, ciclo work-order completo (tomar/comenzar/terminado/validar), delegación encargado→empleado + reabrir, rechazo por permisos, reporte de turno y visibilidad de historial.
 - Integration tests de audio usan fixtures reales en `audios/`; no moverlos a `tests/integration/audios/`.
 
 ## Workflow

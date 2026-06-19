@@ -53,16 +53,16 @@ class TestIncident:
             "employee_name": "Ana", "employee_dept": "HK",
             "descripcion": "Baño roto", "ubicacion": "Habitación 305",
             "categoria": "MANTENIMIENTO", "prioridad": "ALTA",
-            "estado": "ABIERTA",
+            "estado": "NUEVA",
         }
         inc = Incident.from_row(row)
         assert inc.id == 42
-        assert inc.estado == IncidentState.ABIERTA
+        assert inc.estado == IncidentState.NUEVA
         assert inc.descripcion == "Baño roto"
 
     def test_from_row_defaults_estado_when_missing(self):
         inc = Incident.from_row({"id": 1, "timestamp": "", "employee_name": "X", "descripcion": ""})
-        assert inc.estado == IncidentState.ABIERTA
+        assert inc.estado == IncidentState.NUEVA
 
     def test_is_open(self):
         inc = Incident(id=1, timestamp="", employee_name="X", descripcion="")

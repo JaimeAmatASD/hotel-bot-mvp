@@ -29,7 +29,7 @@ class TestStorageQueries(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
 
-    def _insert(self, tipo="INCIDENCIA", prioridad="ALTA", estado="ABIERTA",
+    def _insert(self, tipo="INCIDENCIA", prioridad="ALTA", estado="NUEVA",
                 ubicacion="Habitación 305", descripcion="Test", message="test msg",
                 offset_minutes=0):
         ts = (datetime.now() - timedelta(minutes=offset_minutes)).isoformat(timespec="seconds")
@@ -46,7 +46,7 @@ class TestStorageQueries(unittest.TestCase):
 
     # 1. get_open_incidents devuelve solo no-cerradas
     def test_open_incidents_excludes_closed(self):
-        self._insert(estado="ABIERTA")
+        self._insert(estado="NUEVA")
         self._insert(estado="ASIGNADA")
         self._insert(estado="EN_PROCESO")
         self._insert(estado="CERRADA")
