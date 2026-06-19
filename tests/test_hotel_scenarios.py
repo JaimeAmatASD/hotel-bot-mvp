@@ -40,6 +40,13 @@ ENC_MANT = {
     "idioma": "es",
     "rol": "ENCARGADO",
 }
+EMP_MANT = {
+    "telegram_id": 203,
+    "nombre": "Andrei Mantenimiento",
+    "departamento": "MANTENIMIENTO",
+    "idioma": "es",
+    "rol": "EMPLEADO",
+}
 ENC_HK = {
     "telegram_id": 202,
     "nombre": "Ana Housekeeping",
@@ -59,6 +66,7 @@ EMPLOYEES = {
     EMP_HK["telegram_id"]: EMP_HK,
     EMP_RECEPCION["telegram_id"]: EMP_RECEPCION,
     ENC_MANT["telegram_id"]: ENC_MANT,
+    EMP_MANT["telegram_id"]: EMP_MANT,
     ENC_HK["telegram_id"]: ENC_HK,
     GERENTE["telegram_id"]: GERENTE,
 }
@@ -166,7 +174,7 @@ async def test_employee_report_confirm_and_manager_queries():
     incident = storage.get_incident(1)
     assert incident["tipo"] == "INCIDENCIA"
     assert incident["ubicacion"] == "Habitación 204"
-    assert incident["estado"] == "ABIERTA"
+    assert incident["estado"] == "NUEVA"
     assert len(storage.get_events_for_incident(1)) == 1
 
     manager_ctx = make_context()
@@ -224,16 +232,18 @@ async def test_encargado_lifecycle_closes_incident_and_history_is_auditable():
         actor_name=EMP_HK["nombre"],
         actor_role=EMP_HK["rol"],
         action="created",
-        to_state="ABIERTA",
+        to_state="NUEVA",
     )
 
     context = make_context()
     with patch("handlers.callback_handler.notifier.notify_employee_state_change", new=AsyncMock()), \
+         patch("handlers.callback_handler.notifier.notify_managers_resolved", new=AsyncMock()), \
          patch("handlers.callback_handler.sheets_sync.sync_incidencia", new=_noop_async):
         for action, expected_state in [
             ("tomar", "ASIGNADA"),
-            ("proceso", "EN_PROCESO"),
-            ("cerrar", "CERRADA"),
+            ("comenzar", "EN_PROCESO"),
+            ("terminado", "RESUELTA"),
+            ("validar", "CERRADA"),
         ]:
             update = make_callback_update(ENC_MANT["telegram_id"], f"incident_action:{incident_id}:{action}")
             await _handle_incident_action(update.callback_query, context)
@@ -244,7 +254,7 @@ async def test_encargado_lifecycle_closes_incident_and_history_is_auditable():
     assert incident["closed_at"] is not None
 
     events = storage.get_events_for_incident(incident_id)
-    assert [e["action"] for e in events] == ["created", "tomar", "en_proceso", "cerrar"]
+    assert [e["action"] for e in events] == ["created", "tomar", "comenzar", "terminado", "validar"]
 
     history_update = make_message_update(GERENTE["telegram_id"])
     history_context = make_context()
@@ -253,7 +263,76 @@ async def test_encargado_lifecycle_closes_incident_and_history_is_auditable():
     history_text = latest_reply_text(history_update)
     assert "Historial INC-001" in history_text
     assert "Carlos" in history_text
-    assert "Cerrada" in history_text
+    assert "Validada" in history_text
+
+
+@pytest.mark.asyncio
+async def test_delegation_full_lifecycle_and_reopen():
+    """Encargado delega en un empleado; el empleado ejecuta; el encargado valida y puede reabrir."""
+    from handlers.callback_handler import _handle_assign_to, _handle_incident_action
+
+    incident_id = seed_classification(EMP_HK, INCIDENCIA_204, "Hay agua saliendo del baño de la 204")
+    storage.save_event(
+        incident_id=incident_id, actor_telegram_id=EMP_HK["telegram_id"],
+        actor_name=EMP_HK["nombre"], actor_role=EMP_HK["rol"],
+        action="created", to_state="NUEVA",
+    )
+
+    context = make_context()
+    with patch("handlers.callback_handler.notifier.notify_employee_state_change", new=AsyncMock()), \
+         patch("handlers.callback_handler.notifier.notify_managers_resolved", new=AsyncMock()), \
+         patch("handlers.callback_handler.notifier.notify_assignee", new=AsyncMock()), \
+         patch("handlers.callback_handler.sheets_sync.sync_incidencia", new=_noop_async):
+        # 1) Encargado delega en Andrei
+        upd = make_callback_update(ENC_MANT["telegram_id"], f"assign_to:{incident_id}:{EMP_MANT['telegram_id']}")
+        await _handle_assign_to(upd.callback_query, context)
+        inc = storage.get_incident(incident_id)
+        assert inc["estado"] == "ASIGNADA"
+        assert int(inc["assigned_to_telegram_id"]) == EMP_MANT["telegram_id"]
+        assert int(inc["assigned_by"]) == ENC_MANT["telegram_id"]
+
+        # 2) Andrei (empleado asignado) comienza y termina
+        for action, expected in [("comenzar", "EN_PROCESO"), ("terminado", "RESUELTA")]:
+            upd = make_callback_update(EMP_MANT["telegram_id"], f"incident_action:{incident_id}:{action}")
+            await _handle_incident_action(upd.callback_query, context)
+            assert storage.get_incident(incident_id)["estado"] == expected
+        assert int(storage.get_incident(incident_id)["resolved_by"]) == EMP_MANT["telegram_id"]
+
+        # 3) El encargado valida y cierra
+        upd = make_callback_update(ENC_MANT["telegram_id"], f"incident_action:{incident_id}:validar")
+        await _handle_incident_action(upd.callback_query, context)
+        assert storage.get_incident(incident_id)["estado"] == "CERRADA"
+
+        # 4) Reabrir desde RESUELTA no es posible (ya cerrada); reabrimos un caso resuelto fresco
+        # Verificamos reabrir sobre una nueva incidencia llevada a RESUELTA
+        iid2 = seed_classification(EMP_HK, INCIDENCIA_204, "Otra fuga")
+        storage.update_incident_state_atomic(iid2, "ASIGNADA", ENC_MANT, ["NUEVA"],
+                                             action="asignar", assignee_telegram_id=EMP_MANT["telegram_id"])
+        storage.update_incident_state_atomic(iid2, "EN_PROCESO", EMP_MANT, ["ASIGNADA"], action="comenzar")
+        storage.update_incident_state_atomic(iid2, "RESUELTA", EMP_MANT, ["EN_PROCESO"], action="terminado")
+        upd = make_callback_update(ENC_MANT["telegram_id"], f"incident_action:{iid2}:reabrir")
+        await _handle_incident_action(upd.callback_query, context)
+        reopened = storage.get_incident(iid2)
+        assert reopened["estado"] == "ASIGNADA"
+        assert int(reopened["assigned_to_telegram_id"]) == EMP_MANT["telegram_id"]
+
+
+@pytest.mark.asyncio
+async def test_assigned_employee_only_can_act_on_own_incident():
+    """Un empleado no puede ejecutar acciones sobre una incidencia asignada a otro."""
+    from handlers.callback_handler import _handle_incident_action
+
+    incident_id = seed_classification(EMP_HK, INCIDENCIA_204, "Fuga en la 204")
+    storage.update_incident_state_atomic(incident_id, "ASIGNADA", ENC_MANT, ["NUEVA"],
+                                         action="asignar", assignee_telegram_id=ENC_MANT["telegram_id"])
+
+    context = make_context()
+    upd = make_callback_update(EMP_MANT["telegram_id"], f"incident_action:{incident_id}:comenzar")
+    await _handle_incident_action(upd.callback_query, context)
+
+    upd.callback_query.answer.assert_awaited()
+    assert "permiso" in upd.callback_query.answer.call_args.args[0].lower()
+    assert storage.get_incident(incident_id)["estado"] == "ASIGNADA"
 
 
 @pytest.mark.asyncio
@@ -270,7 +349,7 @@ async def test_wrong_department_encargado_cannot_take_maintenance_incident():
     update.callback_query.answer.assert_awaited_once()
     answer_text = update.callback_query.answer.call_args.args[0]
     assert "permisos" in answer_text.lower()
-    assert storage.get_incident(incident_id)["estado"] == "ABIERTA"
+    assert storage.get_incident(incident_id)["estado"] == "NUEVA"
     events = storage.get_events_for_incident(incident_id)
     assert events[0]["action"] == "action_rejected_no_permission"
 
@@ -344,7 +423,7 @@ async def test_employee_cannot_read_other_employee_incident_history():
         actor_name=EMP_HK["nombre"],
         actor_role=EMP_HK["rol"],
         action="created",
-        to_state="ABIERTA",
+        to_state="NUEVA",
     )
 
     update = make_message_update(EMP_RECEPCION["telegram_id"])
