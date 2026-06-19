@@ -28,12 +28,14 @@ async def test_sync_incidencia_new_id_appends():
     ws = _make_ws_mock(col_a_values=["ID"])
     with patch.object(sheets_sync, "_get_worksheet", return_value=ws):
         result = await sheets_sync.sync_incidencia(
-            {"employee_name": "Ana", "estado": "ABIERTA", "timestamp": "2024-01-01"},
+            {"employee_name": "Ana", "estado": "NUEVA", "timestamp": "2024-01-01"},
             "INC-001",
         )
     assert result is True
     ws.append_row.assert_called_once()
     ws.update.assert_not_called()
+    row = ws.append_row.call_args[0][0]
+    assert len(row) == 15  # A..O con las 3 columnas nuevas
 
 
 # T2: sync_incidencia con ID existente → update, no append

@@ -23,7 +23,8 @@ _worksheets: dict[str, gspread.Worksheet] = {}
 _HEADERS = {
     "Incidencias":       ["ID", "Fecha/hora creación", "Empleado", "Departamento",
                           "Ubicación", "Categoría", "Prioridad", "Descripción",
-                          "Estado", "Asignado a", "Última actualización", "Foto"],
+                          "Estado", "Asignado a", "Última actualización", "Foto",
+                          "Asignado por", "Resuelto por", "Validado por"],
     "Guest Intel":       ["ID", "Fecha/hora", "Empleado", "Habitación huésped",
                           "Tipo de nota", "Descripción", "Idioma original"],
     "Observaciones":     ["ID", "Fecha/hora", "Empleado", "Departamento",
@@ -82,6 +83,12 @@ def _sync_incidencia_sync(incident: dict, display_id: str, employees: dict | Non
         if emp:
             assignee_name = emp.get("nombre", "")
 
+    def _name(tid):
+        if not tid or not employees:
+            return ""
+        e = employees.get(int(tid))
+        return e.get("nombre", "") if e else ""
+
     row = [
         display_id,
         incident.get("timestamp", ""),
@@ -91,16 +98,19 @@ def _sync_incidencia_sync(incident: dict, display_id: str, employees: dict | Non
         incident.get("categoria", "") or "",
         incident.get("prioridad", "") or "",
         incident.get("descripcion", "") or "",
-        incident.get("estado", IncidentState.ABIERTA),
+        incident.get("estado", IncidentState.NUEVA),
         assignee_name,
         datetime.now().isoformat(timespec="seconds"),
         "Sí" if incident.get("photo_path") else "No",
+        _name(incident.get("assigned_by")),
+        _name(incident.get("resolved_by")),
+        _name(incident.get("closed_by")),
     ]
 
     col_a = ws.col_values(1)
     if display_id in col_a:
         row_num = col_a.index(display_id) + 1
-        ws.update(f"A{row_num}:L{row_num}", [row])
+        ws.update(f"A{row_num}:O{row_num}", [row])
     else:
         ws.append_row(row)
 
