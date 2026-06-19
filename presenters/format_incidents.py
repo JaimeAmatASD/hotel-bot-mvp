@@ -22,7 +22,7 @@ def format_incident_line(incident: dict, employees: dict) -> str:
     descripcion = incident.get("descripcion", "")
     created_at = incident.get("timestamp", "")
     dept = _incident_department(incident)
-    estado = incident.get("estado") or IncidentState.ABIERTA
+    estado = incident.get("estado") or IncidentState.NUEVA
 
     assignee = _resolve_assignee_name(incident, employees)
     assigned_at = incident.get("assigned_at")
@@ -33,6 +33,8 @@ def format_incident_line(incident: dict, employees: dict) -> str:
     elif estado == IncidentState.EN_PROCESO and assignee:
         age = f" {format_relative_time(assigned_at)}" if assigned_at else ""
         estado_str = f"EN_PROCESO por {assignee}{age}"
+    elif estado == IncidentState.RESUELTA and assignee:
+        estado_str = f"RESUELTA por {assignee} (a validar)"
     else:
         estado_str = estado
 

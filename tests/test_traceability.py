@@ -27,7 +27,7 @@ class TestEventLog(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
 
-    def _seed_incident(self, estado="ABIERTA"):
+    def _seed_incident(self, estado="NUEVA"):
         with storage._conn() as con:
             cur = con.execute(
                 """INSERT INTO classifications
@@ -82,12 +82,12 @@ class TestEventLog(unittest.TestCase):
         actions = [e["action"] for e in events]
         self.assertEqual(actions, ["created", "tomar", "cerrar"])
 
-    # 4. update_incident_state_atomic ABIERTA→ASIGNADA: success + evento "tomar"
+    # 4. update_incident_state_atomic NUEVA→ASIGNADA: success + evento "tomar"
     def test_atomic_tomar_abierta(self):
-        iid = self._seed_incident("ABIERTA")
-        result = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR_CARLOS, ["ABIERTA"])
+        iid = self._seed_incident("NUEVA")
+        result = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR_CARLOS, ["NUEVA"], action="tomar")
         self.assertTrue(result["success"])
-        self.assertEqual(result["from_state"], "ABIERTA")
+        self.assertEqual(result["from_state"], "NUEVA")
         self.assertEqual(result["to_state"], "ASIGNADA")
         events = storage.get_events_for_incident(iid)
         self.assertEqual(len(events), 1)
@@ -97,7 +97,7 @@ class TestEventLog(unittest.TestCase):
     # 5. update_incident_state_atomic con estado no en expected: rechaza + evento rejected
     def test_atomic_rejected_wrong_state(self):
         iid = self._seed_incident("ASIGNADA")
-        result = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR_CARLOS, ["ABIERTA"])
+        result = storage.update_incident_state_atomic(iid, "ASIGNADA", self.ACTOR_CARLOS, ["NUEVA"], action="tomar")
         self.assertFalse(result["success"])
         events = storage.get_events_for_incident(iid)
         self.assertEqual(len(events), 1)
@@ -107,19 +107,19 @@ class TestEventLog(unittest.TestCase):
     # 6. CERRADA→cualquier: rechaza
     def test_atomic_rejected_cerrada(self):
         iid = self._seed_incident("CERRADA")
-        result = storage.update_incident_state_atomic(iid, "CERRADA", self.ACTOR_CARLOS, ["ABIERTA", "ASIGNADA", "EN_PROCESO"])
+        result = storage.update_incident_state_atomic(iid, "CERRADA", self.ACTOR_CARLOS, ["NUEVA", "ASIGNADA", "EN_PROCESO"], action="validar")
         self.assertFalse(result["success"])
 
     # 7. Test de concurrencia con threading
     def test_concurrent_tomar_only_one_wins(self):
-        iid = self._seed_incident("ABIERTA")
+        iid = self._seed_incident("NUEVA")
         results = []
         barrier = threading.Barrier(2)
 
         def try_tomar(actor_id):
             barrier.wait()  # ambos arrancan al mismo tiempo
             actor = {**self.ACTOR_CARLOS, "telegram_id": actor_id}
-            r = storage.update_incident_state_atomic(iid, "ASIGNADA", actor, ["ABIERTA"])
+            r = storage.update_incident_state_atomic(iid, "ASIGNADA", actor, ["NUEVA"], action="tomar")
             results.append(r)
 
         t1 = threading.Thread(target=try_tomar, args=(444,))
@@ -143,10 +143,10 @@ class TestEventLog(unittest.TestCase):
 
     # 17. Evento verificable tras atomic
     def test_atomic_event_in_db(self):
-        iid = self._seed_incident("ABIERTA")
-        storage.update_incident_state_atomic(iid, "EN_PROCESO", self.ACTOR_CARLOS, ["ABIERTA", "ASIGNADA"])
+        iid = self._seed_incident("ASIGNADA")
+        storage.update_incident_state_atomic(iid, "EN_PROCESO", self.ACTOR_CARLOS, ["ASIGNADA"], action="comenzar")
         events = storage.get_events_for_incident(iid)
-        self.assertEqual(events[0]["action"], "en_proceso")
+        self.assertEqual(events[0]["action"], "comenzar")
         self.assertEqual(events[0]["actor_name"], "Carlos Encargado Mant")
 
 
@@ -171,17 +171,17 @@ class TestFormatters(unittest.TestCase):
             })
         return events
 
-    # 8. build_timeline_text con created+tomar+cerrar
+    # 8. build_timeline_text con created+asignar+validar
     def test_build_timeline_three_lines(self):
         events = self._make_events([
             ("created", "Jaime A", True),
-            ("tomar", "Carlos E", True),
-            ("cerrar", "Carlos E", True),
+            ("asignar", "Carlos E", True),
+            ("validar", "Carlos E", True),
         ])
         text = build_timeline_text(events)
         self.assertIn("Reportada", text)
-        self.assertIn("Tomada", text)
-        self.assertIn("Cerrada", text)
+        self.assertIn("Asignada", text)
+        self.assertIn("Validada", text)
 
     # 9. build_timeline_text filtra notification_sent
     def test_build_timeline_filters_notifications(self):
@@ -199,7 +199,7 @@ class TestFormatters(unittest.TestCase):
         base = datetime(2026, 5, 17, 14, 0, 0)
         events = [
             {"action": "created", "timestamp": base.isoformat(timespec="seconds"), "success": 1},
-            {"action": "cerrar", "timestamp": (base + timedelta(minutes=83)).isoformat(timespec="seconds"), "success": 1},
+            {"action": "validar", "timestamp": (base + timedelta(minutes=83)).isoformat(timespec="seconds"), "success": 1},
         ]
         result = calculate_total_time(events)
         self.assertEqual(result, "1h 23min")
@@ -209,7 +209,7 @@ class TestFormatters(unittest.TestCase):
         base = datetime.now()
         events = [
             {"action": "created", "timestamp": base.isoformat(timespec="seconds"), "success": 1},
-            {"action": "cerrar", "timestamp": (base + timedelta(seconds=30)).isoformat(timespec="seconds"), "success": 1},
+            {"action": "validar", "timestamp": (base + timedelta(seconds=30)).isoformat(timespec="seconds"), "success": 1},
         ]
         result = calculate_total_time(events)
         self.assertEqual(result, "menos de 1 min")

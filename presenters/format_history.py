@@ -8,7 +8,7 @@ from presenters.format_relative import format_relative_time, format_priority_emo
 
 def calculate_total_time(events: list[dict]) -> str:
     created_ts = next((e["timestamp"] for e in events if e["action"] == "created"), None)
-    closed_ts = next((e["timestamp"] for e in events if e["action"] == "cerrar" and e["success"]), None)
+    closed_ts = next((e["timestamp"] for e in events if e["action"] == "validar" and e["success"]), None)
     if not created_ts or not closed_ts:
         return ""
     try:
@@ -38,7 +38,7 @@ def build_timeline_text(events: list[dict]) -> str:
 
         if action == "created":
             lines.append(f"   • Reportada {time_str}")
-        elif action in ("tomar", "en_proceso", "cerrar"):
+        elif action in ("tomar", "asignar", "reasignar", "comenzar", "terminado", "validar", "reabrir", "cancelar"):
             actor_first = actor.split()[0] if actor else "alguien"
             lines.append(f"   • {label} {actor_first} {time_str}")
         elif action == "action_rejected_already_done":
@@ -76,12 +76,12 @@ def format_incident_history(incident: dict, events: list[dict]) -> str:
         if action == "created":
             lines.append(f"{emoji} {time_label} — {descripcion[:50]}")
             lines.append(f"   Creada por {actor}")
-        elif action in ("tomar", "en_proceso", "cerrar"):
+        elif action in ("tomar", "asignar", "reasignar", "comenzar", "terminado", "validar", "reabrir", "cancelar"):
             label = ACTION_LABELS.get(action, action)
             lines.append(f"{emoji} {time_label} — {label} {actor_first}")
             if from_s and to_s:
                 lines.append(f"   {from_s} → {to_s}")
-            if action == "cerrar" and total_time:
+            if action == "validar" and total_time:
                 lines.append(f"   Tiempo total: {total_time}")
         elif action == "notification_sent":
             extra = e.get("extra") or {}
