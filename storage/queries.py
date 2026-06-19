@@ -12,7 +12,7 @@ _PRIORITY_ORDER = (
 
 def get_open_incidents(prioridad: str | None = None, limit: int = 100) -> list[dict]:
     params: list = []
-    where = "tipo = 'INCIDENCIA' AND (estado IS NULL OR estado IN ('ABIERTA', 'ASIGNADA', 'EN_PROCESO'))"
+    where = "tipo = 'INCIDENCIA' AND (estado IS NULL OR estado IN ('NUEVA', 'ASIGNADA', 'EN_PROCESO', 'RESUELTA'))"
     if prioridad:
         where += " AND prioridad = ?"
         params.append(prioridad.upper())

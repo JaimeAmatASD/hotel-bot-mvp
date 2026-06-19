@@ -135,9 +135,9 @@ async def handle_hab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     all_incidents = get_incidents_for_room(room)
     visible = filter_visible_incidents(user, all_incidents) if user else all_incidents
 
-    open_states = {IncidentState.ABIERTA, IncidentState.ASIGNADA, IncidentState.EN_PROCESO}
-    incidents_open = [i for i in visible if (i.get("estado") or IncidentState.ABIERTA) in open_states]
-    incidents_closed = [i for i in visible if (i.get("estado") or IncidentState.ABIERTA) == IncidentState.CERRADA]
+    open_states = {IncidentState.NUEVA, IncidentState.ASIGNADA, IncidentState.EN_PROCESO, IncidentState.RESUELTA}
+    incidents_open = [i for i in visible if (i.get("estado") or IncidentState.NUEVA) in open_states]
+    incidents_closed = [i for i in visible if (i.get("estado") or IncidentState.NUEVA) == IncidentState.CERRADA]
 
     guest_intel = get_guest_intel_for_room(room)
     observations = get_observations_for_room(room)
@@ -255,7 +255,7 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if tipo == ReportType.INCIDENCIA:
                 ubicacion = item.get("ubicacion", "")
                 prioridad = item.get("prioridad", "")
-                estado = item.get("estado", IncidentState.ABIERTA)
+                estado = item.get("estado", IncidentState.NUEVA)
                 categoria = item.get("categoria", "")
                 lines.append(f"{num}. 🔧 {ubicacion} — {desc}")
                 lines.append(f"   Categoría: {categoria} | Prioridad: {prioridad} | Estado: {estado}")

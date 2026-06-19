@@ -41,7 +41,7 @@ def format_report_summary(items: list[dict], employee: dict, hours: int) -> tupl
         for item in incidencias:
             ubicacion = item.get("ubicacion", "")
             descripcion = (item.get("descripcion") or "")[:50]
-            estado = item.get("estado") or IncidentState.ABIERTA
+            estado = item.get("estado") or IncidentState.NUEVA
             lines.append(f"  {num}. {ubicacion} — {descripcion} [{estado}]")
             num += 1
 
@@ -70,7 +70,7 @@ def format_report_for_sheet(items: list[dict]) -> str:
         tipo = item.get("tipo")
         if tipo == ReportType.INCIDENCIA:
             ubicacion = item.get("ubicacion", "")
-            estado = item.get("estado") or IncidentState.ABIERTA
+            estado = item.get("estado") or IncidentState.NUEVA
             parts.append(f"[INC] {ubicacion}: {descripcion} ({estado})")
         elif tipo == ReportType.GUEST_INTEL:
             parts.append(f"[GI] {descripcion}")

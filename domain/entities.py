@@ -59,7 +59,7 @@ class Incident:
     ubicacion: Optional[str] = None
     categoria: Optional[str] = None
     prioridad: Optional[str] = None
-    estado: IncidentState = IncidentState.ABIERTA
+    estado: IncidentState = IncidentState.NUEVA
     assigned_to_telegram_id: Optional[int] = None
     assigned_at: Optional[str] = None
     closed_at: Optional[str] = None
@@ -72,7 +72,7 @@ class Incident:
     @classmethod
     def from_row(cls, row: dict) -> "Incident":
         """Builds an Incident from a SQLite row dict (handles SQLite's int-for-bool quirks)."""
-        estado_raw = row.get("estado") or IncidentState.ABIERTA
+        estado_raw = row.get("estado") or IncidentState.NUEVA
         return cls(
             id=row["id"],
             timestamp=row.get("timestamp", ""),
@@ -82,7 +82,7 @@ class Incident:
             ubicacion=row.get("ubicacion"),
             categoria=row.get("categoria"),
             prioridad=row.get("prioridad"),
-            estado=IncidentState(estado_raw) if estado_raw else IncidentState.ABIERTA,
+            estado=IncidentState(estado_raw) if estado_raw else IncidentState.NUEVA,
             assigned_to_telegram_id=row.get("assigned_to_telegram_id"),
             assigned_at=row.get("assigned_at"),
             closed_at=row.get("closed_at"),
