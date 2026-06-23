@@ -2,6 +2,7 @@
 import json
 from datetime import datetime, timedelta
 
+from config.enums import IncidentState
 from storage._conn import _conn
 
 
@@ -11,8 +12,8 @@ def save(employee: dict, message: str, result: dict) -> int:
             INSERT INTO classifications
             (timestamp, employee_name, employee_dept, message, tipo, prioridad,
              categoria, ubicacion, confianza, campos_faltantes, habitacion,
-             huesped_afectado, descripcion, photo_path)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             huesped_afectado, descripcion, photo_path, estado)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             datetime.now().isoformat(timespec="seconds"),
             employee["nombre"],
@@ -28,6 +29,7 @@ def save(employee: dict, message: str, result: dict) -> int:
             int(result.get("huesped_afectado") or 0),
             result.get("descripcion"),
             result.get("_meta", {}).get("photo_path"),
+            IncidentState.NUEVA,
         ))
         return cur.lastrowid
 
