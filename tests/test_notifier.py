@@ -321,10 +321,17 @@ async def test_notify_managers_resolved_avisa_a_managers():
     incident = {"id": 7, "categoria": "MANTENIMIENTO", "descripcion": "x", "ubicacion": "Hab 77"}
     sent = []
     class FakeSender:
-        async def send_text(self, chat_id, text): sent.append(chat_id)
+        async def send_text(self, chat_id, text, reply_markup=None):
+            sent.append((chat_id, reply_markup))
     with patch("notifier.state_change.as_sender", return_value=FakeSender()), \
          patch("notifier.state_change.settings") as s:
         s.NOTIFICATION_REDIRECT_MODE = "off"
         s.ADMIN_TELEGRAM_ID = 0
         await notify_managers_resolved(bot=MagicMock(), incident=incident, actor_name="Andrei", employees=employees)
-    assert 444444444 in sent and 777777777 in sent
+    chats = [c for c, _ in sent]
+    assert 444444444 in chats and 777777777 in chats
+    # Cada manager recibe los botones de validar/reabrir (RESUELTA)
+    markup = sent[0][1]
+    cbs = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert "incident_action:7:validar" in cbs
+    assert "incident_action:7:reabrir" in cbs

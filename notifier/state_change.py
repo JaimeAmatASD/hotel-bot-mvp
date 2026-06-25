@@ -96,12 +96,13 @@ async def notify_managers_resolved(bot, incident: dict, actor_name: str, employe
     display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident["id"])
     desc = incident.get("descripcion", "")
     text = f"✅ {actor_name} marcó como resuelto {display_id} ({desc}). Validá y cerrá cuando confirmes."
+    keyboard = build_keyboard_for_state(incident["id"], IncidentState.RESUELTA)
     recipients = permissions.get_notification_recipients(incident, employees)
     sender = as_sender(bot)
 
     async def _send(tid):
         try:
-            await sender.send_text(chat_id=_resolve_recipient(tid), text=text)
+            await sender.send_text(chat_id=_resolve_recipient(tid), text=text, reply_markup=keyboard)
         except Exception:
             pass
 
