@@ -212,6 +212,35 @@ async def handle_mistareas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def handle_porvalidar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cola de validación del gerente/encargado: incidencias RESUELTA de su alcance."""
+    tid = update.effective_user.id
+    employees = context.bot_data.get("employees", {})
+    user = employees.get(tid)
+    if not user:
+        await update.message.reply_text("No estás registrado en el sistema.")
+        return
+    if not permissions.is_manager(tid, employees):
+        await update.message.reply_text(
+            "Solo encargados y gerentes validan incidencias."
+        )
+        return
+
+    pendientes = filter_visible_incidents(user, storage.get_resolved_incidents())
+    if not pendientes:
+        await update.message.reply_text("✅ No hay incidencias esperando validación.")
+        return
+
+    await update.message.reply_text(
+        f"📋 {len(pendientes)} incidencia(s) esperando tu validación:"
+    )
+    for inc in pendientes:
+        keyboard = build_keyboard_for_state(inc["id"], IncidentState.RESUELTA)
+        await update.message.reply_text(
+            format_incident_line(inc, employees), reply_markup=keyboard
+        )
+
+
 _DEFAULT_HOURS = 12
 
 

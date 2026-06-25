@@ -132,6 +132,17 @@ class TestStorageQueries(unittest.TestCase):
             )
             return cur.lastrowid
 
+    # get_resolved_incidents devuelve solo las RESUELTA (a validar)
+    def test_resolved_incidents_only_resueltas(self):
+        self._insert(estado="NUEVA")
+        self._insert(estado="ASIGNADA")
+        self._insert(estado="RESUELTA")
+        self._insert(estado="RESUELTA")
+        self._insert(estado="CERRADA")
+        results = storage.get_resolved_incidents()
+        self.assertEqual(len(results), 2)
+        self.assertTrue(all(r["estado"] == "RESUELTA" for r in results))
+
     # get_incidents_assigned_to devuelve solo las del asignado y no terminales
     def test_assigned_to_filters_by_person_and_open(self):
         self._insert_assigned(777, estado="ASIGNADA")

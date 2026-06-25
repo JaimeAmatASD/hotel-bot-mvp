@@ -19,7 +19,7 @@ from handlers.callback_handler import handle_callback
 from handlers.command_handler import (
     handle_debug, handle_notificaciones,
     handle_abiertas, handle_hab, handle_buscar, handle_help, handle_historial,
-    handle_reporte, handle_fin, handle_mistareas,
+    handle_reporte, handle_fin, handle_mistareas, handle_porvalidar,
 )
 
 
@@ -40,6 +40,7 @@ def main():
     app.add_handler(CommandHandler("notificaciones", handle_notificaciones))
     app.add_handler(CommandHandler("abiertas", handle_abiertas))
     app.add_handler(CommandHandler("mistareas", handle_mistareas))
+    app.add_handler(CommandHandler("porvalidar", handle_porvalidar))
     app.add_handler(CommandHandler("hab", handle_hab))
     app.add_handler(CommandHandler("buscar", handle_buscar))
     app.add_handler(CommandHandler("help", handle_help))

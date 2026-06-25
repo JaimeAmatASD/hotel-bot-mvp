@@ -376,6 +376,63 @@ async def test_mistareas_empty_when_nothing_assigned():
 
 
 @pytest.mark.asyncio
+async def test_porvalidar_lists_resolved_with_buttons_for_manager():
+    """/porvalidar le muestra al encargado las RESUELTA de su depto, con botones de validar."""
+    from handlers.command_handler import handle_porvalidar
+
+    # Una RESUELTA de MANTENIMIENTO (la ve el encargado de mant) y una ASIGNADA (no aparece)
+    resuelta = seed_classification(EMP_HK, INCIDENCIA_204, "Fuga resuelta 204")
+    storage.update_incident_state_atomic(resuelta, "ASIGNADA", ENC_MANT, ["NUEVA"],
+                                         action="asignar", assignee_telegram_id=EMP_MANT["telegram_id"])
+    storage.update_incident_state_atomic(resuelta, "RESUELTA", EMP_MANT, ["ASIGNADA", "EN_PROCESO"],
+                                         action="terminado")
+    asignada = seed_classification(EMP_HK, INCIDENCIA_204, "Otra en curso")
+    storage.update_incident_state_atomic(asignada, "ASIGNADA", ENC_MANT, ["NUEVA"],
+                                         action="asignar", assignee_telegram_id=EMP_MANT["telegram_id"])
+
+    context = make_context()
+    update = make_message_update(ENC_MANT["telegram_id"], "/porvalidar")
+    await handle_porvalidar(update, context)
+
+    calls = update.message.reply_text.call_args_list
+    header = calls[0].args[0] if calls[0].args else calls[0].kwargs["text"]
+    assert "1" in header
+    kb = calls[1].kwargs["reply_markup"]
+    cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
+    assert f"incident_action:{resuelta}:validar" in cbs
+    assert f"incident_action:{resuelta}:reabrir" in cbs
+    # La ASIGNADA no debe aparecer
+    assert all(str(asignada) not in c.split(":")[1] for c in cbs)
+
+
+@pytest.mark.asyncio
+async def test_porvalidar_encargado_no_ve_otro_departamento():
+    from handlers.command_handler import handle_porvalidar
+
+    # RESUELTA de MANTENIMIENTO: el encargado de HOUSEKEEPING no la ve
+    resuelta = seed_classification(EMP_HK, INCIDENCIA_204, "Fuga mant")
+    storage.update_incident_state_atomic(resuelta, "ASIGNADA", ENC_MANT, ["NUEVA"],
+                                         action="asignar", assignee_telegram_id=EMP_MANT["telegram_id"])
+    storage.update_incident_state_atomic(resuelta, "RESUELTA", EMP_MANT, ["ASIGNADA", "EN_PROCESO"],
+                                         action="terminado")
+
+    context = make_context()
+    update = make_message_update(ENC_HK["telegram_id"], "/porvalidar")
+    await handle_porvalidar(update, context)
+    assert "No hay" in latest_reply_text(update)
+
+
+@pytest.mark.asyncio
+async def test_porvalidar_empleado_rechazado():
+    from handlers.command_handler import handle_porvalidar
+    context = make_context()
+    update = make_message_update(EMP_MANT["telegram_id"], "/porvalidar")
+    await handle_porvalidar(update, context)
+    txt = latest_reply_text(update).lower()
+    assert "encargado" in txt or "gerente" in txt
+
+
+@pytest.mark.asyncio
 async def test_assigned_employee_only_can_act_on_own_incident():
     """Un empleado no puede ejecutar acciones sobre una incidencia asignada a otro."""
     from handlers.callback_handler import _handle_incident_action

@@ -44,6 +44,7 @@ from storage.reports import (
 from storage.queries import (
     get_open_incidents,
     get_incidents_assigned_to,
+    get_resolved_incidents,
     get_employees,
     get_employee_stats,
     get_all_history,
@@ -62,6 +63,6 @@ __all__ = [
     "create_report", "get_report_with_items",
     "link_classification_to_report", "link_classifications_to_report",
     "get_classifications_for_employee_recent",
-    "get_open_incidents", "get_incidents_assigned_to",
+    "get_open_incidents", "get_incidents_assigned_to", "get_resolved_incidents",
     "get_employees", "get_employee_stats", "get_all_history",
 ]

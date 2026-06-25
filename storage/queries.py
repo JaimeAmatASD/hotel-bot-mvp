@@ -39,6 +39,18 @@ def get_incidents_assigned_to(telegram_id: int, limit: int = 100) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_resolved_incidents(limit: int = 100) -> list[dict]:
+    """Incidencias en estado RESUELTA (esperando validación). Para /porvalidar."""
+    with _conn() as con:
+        rows = con.execute(
+            f"""SELECT * FROM classifications
+                WHERE tipo = 'INCIDENCIA' AND estado = 'RESUELTA'
+                ORDER BY {_PRIORITY_ORDER} ASC, timestamp ASC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_employees():
     with _conn() as con:
         rows = con.execute("""
