@@ -376,6 +376,65 @@ async def test_mistareas_empty_when_nothing_assigned():
 
 
 @pytest.mark.asyncio
+async def test_full_flow_report_assign_mistareas_terminate_porvalidar_validate():
+    """Recorrido completo del flujo nuevo, de punta a punta:
+    reportar → asignar → /mistareas → terminar → /porvalidar → validar → CERRADA.
+    """
+    from handlers.callback_handler import _handle_assign_to, _handle_incident_action
+    from handlers.command_handler import handle_mistareas, handle_porvalidar
+
+    context = make_context()
+    patches = (
+        patch("handlers.callback_handler.notifier.notify_assignee", new=AsyncMock()),
+        patch("handlers.callback_handler.notifier.notify_employee_state_change", new=AsyncMock()),
+        patch("handlers.callback_handler.notifier.notify_managers_resolved", new=AsyncMock()),
+        patch("handlers.callback_handler.sheets_sync.sync_incidencia", new=_noop_async),
+    )
+    with patches[0], patches[1], patches[2], patches[3]:
+        # 1) Un empleado reporta (queda NUEVA)
+        incident_id = seed_classification(EMP_HK, INCIDENCIA_204, "Ventilador roto en la 204")
+        storage.save_event(incident_id=incident_id, actor_telegram_id=EMP_HK["telegram_id"],
+                           actor_name=EMP_HK["nombre"], actor_role=EMP_HK["rol"],
+                           action="created", to_state="NUEVA")
+        assert storage.get_incident(incident_id)["estado"] == "NUEVA"
+
+        # 2) El encargado de mantenimiento se la asigna a Andrei
+        upd = make_callback_update(ENC_MANT["telegram_id"], f"assign_to:{incident_id}:{EMP_MANT['telegram_id']}")
+        await _handle_assign_to(upd.callback_query, context)
+        assert storage.get_incident(incident_id)["estado"] == "ASIGNADA"
+
+        # 3) Andrei la ve en /mistareas con botón para terminar
+        mt = make_message_update(EMP_MANT["telegram_id"], "/mistareas")
+        await handle_mistareas(mt, context)
+        mis_cbs = [b.callback_data for row in mt.message.reply_text.call_args_list[1].kwargs["reply_markup"].inline_keyboard for b in row]
+        assert f"incident_action:{incident_id}:terminado" in mis_cbs
+
+        # 4) Andrei termina directo (sin pasar por "comenzar")
+        upd = make_callback_update(EMP_MANT["telegram_id"], f"incident_action:{incident_id}:terminado")
+        await _handle_incident_action(upd.callback_query, context)
+        assert storage.get_incident(incident_id)["estado"] == "RESUELTA"
+
+        # 5) El encargado la ve en /porvalidar con botones de validar/reabrir
+        pv = make_message_update(ENC_MANT["telegram_id"], "/porvalidar")
+        await handle_porvalidar(pv, context)
+        pv_cbs = [b.callback_data for row in pv.message.reply_text.call_args_list[1].kwargs["reply_markup"].inline_keyboard for b in row]
+        assert f"incident_action:{incident_id}:validar" in pv_cbs
+        assert f"incident_action:{incident_id}:reabrir" in pv_cbs
+
+        # 6) El encargado valida y cierra
+        upd = make_callback_update(ENC_MANT["telegram_id"], f"incident_action:{incident_id}:validar")
+        await _handle_incident_action(upd.callback_query, context)
+        final = storage.get_incident(incident_id)
+        assert final["estado"] == "CERRADA"
+        assert int(final["closed_by"]) == ENC_MANT["telegram_id"]
+
+        # 7) Ya no aparece en /porvalidar
+        pv2 = make_message_update(ENC_MANT["telegram_id"], "/porvalidar")
+        await handle_porvalidar(pv2, context)
+        assert "No hay" in latest_reply_text(pv2)
+
+
+@pytest.mark.asyncio
 async def test_porvalidar_lists_resolved_with_buttons_for_manager():
     """/porvalidar le muestra al encargado las RESUELTA de su depto, con botones de validar."""
     from handlers.command_handler import handle_porvalidar
