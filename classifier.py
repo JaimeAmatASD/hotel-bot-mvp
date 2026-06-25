@@ -23,9 +23,9 @@ SYSTEM_PROMPT = """Eres un asistente que estructura mensajes operativos del pers
 # Categorías
 
 - INCIDENCIA: evento puntual y actual — algo está roto, sucio, faltante ahora mismo, o requiere acción operativa inmediata. Tiene ubicación física concreta.
-- OBSERVACION: tendencia, patrón repetido, sugerencia o mejora operativa. Señales: "últimamente", "a menudo", "cada vez", "deberíamos", "parece que", "se están" (patrón), "se ve" (tendencia). NO requiere acción inmediata.
+- OBSERVACION: tendencia, patrón, sugerencia, mejora operativa, O novedad de turno. Incluye: tendencias ("últimamente", "a menudo", "cada vez", "deberíamos", "parece que", "se están", "se ve"); y registros de turno: rondas/chequeos realizados, tareas de rutina completadas, faltantes de stock/insumos, o un parte de "sin novedad" ("revisé pisos 2-4, todo en orden", "falta stock de lámparas", "turno tranquilo en mantenimiento"). NO requiere acción inmediata pero SÍ deja constancia para el informe de turno.
 - GUEST_INTEL: información sobre la situación, necesidades o preferencias de un huésped específico. Aunque implique una acción pendiente, si el núcleo del mensaje es sobre el huésped → GUEST_INTEL. Usa campos_faltantes para indicar la acción pendiente.
-- NO_REPORTE: el mensaje no es ninguno de los anteriores (saludo, pregunta personal, queja sobre el trabajo, basura, gossip sin valor operacional).
+- NO_REPORTE: el mensaje no es ninguno de los anteriores (saludo, pregunta personal, queja sobre el trabajo, basura, gossip sin valor operacional). Si describe algo que pasó en el turno con valor operativo (aunque sea menor), preferí OBSERVACION sobre NO_REPORTE.
 
 # Desambiguación INCIDENCIA vs OBSERVACION
 

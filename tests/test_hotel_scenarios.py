@@ -376,6 +376,48 @@ async def test_mistareas_empty_when_nothing_assigned():
 
 
 @pytest.mark.asyncio
+async def test_shift_report_compiles_template_and_notifies_dept_lead():
+    """Turno: el empleado carga varias cosas → /reporte arma la plantilla → confirma →
+    REP creado con ítems linkeados y aviso al encargado de su depto."""
+    from handlers.command_handler import handle_reporte
+    from handlers.callback_handler import handle_callback
+
+    # María (HOUSEKEEPING) carga 3 cosas durante el turno
+    seed_classification(EMP_HK, {"tipo": "INCIDENCIA", "ubicacion": "Hab 204",
+        "categoria": "HOUSEKEEPING", "prioridad": "ALTA", "descripcion": "Toallas faltantes",
+        "huesped_afectado": False, "campos_faltantes": [], "confianza": 0.9, "_meta": {}},
+        "Faltan toallas en la 204")
+    seed_classification(EMP_HK, {"tipo": "GUEST_INTEL", "ubicacion": "Hab 305",
+        "descripcion": "Pidió almohadas extra", "campos_faltantes": [], "confianza": 0.9, "_meta": {}},
+        "El de la 305 pidió almohadas")
+    seed_classification(EMP_HK, {"tipo": "OBSERVACION", "ubicacion": "Pisos 2-4",
+        "descripcion": "Revisé pisos 2 al 4, todo en orden", "campos_faltantes": [], "confianza": 0.9, "_meta": {}},
+        "Revisé pisos 2 al 4 sin novedad")
+
+    context = make_context()
+    with patch("config.settings.NOTIFICATION_REDIRECT_MODE", "off"), \
+         patch("handlers.callback_handler.sheets_sync.sync_reporte", new=_noop_async):
+        # 1) /reporte arma el borrador con la plantilla
+        rep_upd = make_message_update(EMP_HK["telegram_id"], "/reporte")
+        await handle_reporte(rep_upd, context)
+        summary = latest_reply_text(rep_upd)
+        assert "INFORME DE TURNO" in summary
+        assert "NOVEDADES DEL TURNO" in summary  # la observación narrativa entra acá
+        assert context.user_data.get("pending_report_items")
+
+        # 2) Confirmar → cierra el REP
+        cb = make_callback_update(EMP_HK["telegram_id"], "report_confirm_all")
+        await handle_callback(cb, context)
+
+    # El REP quedó creado y los 3 ítems linkeados (ya no aparecen como sueltos)
+    sueltos = storage.get_classifications_for_employee_recent(EMP_HK["nombre"], 24)
+    assert sueltos == []
+    # El encargado de HOUSEKEEPING recibió el informe
+    sent_chats = [c.kwargs.get("chat_id") for c in context.bot.send_message.call_args_list]
+    assert ENC_HK["telegram_id"] in sent_chats
+
+
+@pytest.mark.asyncio
 async def test_full_flow_report_assign_mistareas_terminate_porvalidar_validate():
     """Recorrido completo del flujo nuevo, de punta a punta:
     reportar → asignar → /mistareas → terminar → /porvalidar → validar → CERRADA.
@@ -563,7 +605,7 @@ async def test_shift_report_links_items_and_manager_can_open_report():
     await handle_reporte(report_update, employee_context)
 
     assert len(employee_context.user_data["pending_report_items"]["items"]) == 3
-    assert "Resumen últimas 12h" in latest_reply_text(report_update)
+    assert "INFORME DE TURNO" in latest_reply_text(report_update)
 
     confirm_update = make_callback_update(EMP_HK["telegram_id"], "report_confirm_all")
     with patch("handlers.callback_handler.report_processor.notify_manager_report", new=AsyncMock()) as notify_report, \
@@ -581,8 +623,8 @@ async def test_shift_report_links_items_and_manager_can_open_report():
     manager_context.args = ["REP-1"]
     await handle_reporte(manager_update, manager_context)
     report_text = latest_reply_text(manager_update)
-    assert "REP-1" in report_text
-    assert "Ítems: 3" in report_text
+    assert "REP-001" in report_text
+    assert "3 ítems" in report_text
 
 
 @pytest.mark.asyncio

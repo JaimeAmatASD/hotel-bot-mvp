@@ -132,10 +132,10 @@ class TestReporteSummary(Base):
         self.assertEqual(len(items), 3)
 
         text, keyboard = report_processor.format_report_summary(items, self.EMPLOYEE, 6)
-        self.assertIn("Incidencias", text)
-        self.assertIn("Notas de huéspedes", text)
-        self.assertIn("Observaciones", text)
-        self.assertIn("últimas 6h", text)
+        self.assertIn("INCIDENCIAS", text)
+        self.assertIn("NOTAS DE HUÉSPED", text)
+        self.assertIn("NOVEDADES DEL TURNO", text)
+        self.assertIn("INFORME DE TURNO", text)
         self.assertIsNotNone(keyboard)
 
     def test_global_numbering(self):
@@ -199,6 +199,44 @@ class TestConfirmReport(Base):
 
         asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
         bot.send_message.assert_called_once()
+
+    def test_notify_includes_dept_encargado_regardless_of_mode(self):
+        items = self._make_items()  # EMPLOYEE es de SPA
+        rid = storage.create_report(self.EMPLOYEE)
+        storage.link_classifications_to_report([i["id"] for i in items], rid)
+        rep = storage.get_report_with_items(rid)
+
+        enc_spa = {"telegram_id": 5555, "nombre": "Sole Enc SPA",
+                   "departamento": "SPA", "rol": "ENCARGADO"}
+        employees = {
+            self.EMPLOYEE["telegram_id"]: self.EMPLOYEE,
+            enc_spa["telegram_id"]: enc_spa,
+            self.GERENTE["telegram_id"]: self.GERENTE,
+        }
+        storage.set_notification_mode(self.GERENTE["telegram_id"], "criticas")  # gerente NO recibe
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
+
+        sent_to = [c.kwargs.get("chat_id") for c in bot.send_message.call_args_list]
+        self.assertIn(5555, sent_to)                                  # encargado del depto: siempre
+        self.assertNotIn(self.GERENTE["telegram_id"], sent_to)        # gerente en 'criticas': no
+
+    def test_author_not_self_notified(self):
+        # Autor es el propio encargado de SPA → no debe autonotificarse
+        enc_author = {"telegram_id": 6666, "nombre": "Encargada SPA",
+                      "departamento": "SPA", "rol": "ENCARGADO"}
+        cid = _insert_classification(str(self.db_path), "Encargada SPA", "OBSERVACION", "obs")
+        rid = storage.create_report(enc_author)
+        storage.link_classifications_to_report([cid], rid)
+        rep = storage.get_report_with_items(rid)
+        employees = {enc_author["telegram_id"]: enc_author}
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        asyncio.run(report_processor.notify_manager_report(bot, rep, [storage.get_incident(cid)], employees))
+        bot.send_message.assert_not_called()
 
     def test_no_notify_manager_if_mode_not_todo(self):
         items = self._make_items()

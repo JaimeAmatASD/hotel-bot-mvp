@@ -295,30 +295,14 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("No tenés permiso para ver ese reporte.")
                     return
 
-        lines = [
-            f"📋 REP-{report_id} — {report.get('employee_name', '')}",
-            f"Creado: {report.get('started_at', '')[:16]}",
-            f"Ítems: {len(report.get('items', []))}",
-            "",
-        ]
-        num = 1
-        for item in report.get("items", []):
-            tipo = item.get("tipo", "")
-            desc = item.get("descripcion") or ""
-            if tipo == ReportType.INCIDENCIA:
-                ubicacion = item.get("ubicacion", "")
-                prioridad = item.get("prioridad", "")
-                estado = item.get("estado", IncidentState.NUEVA)
-                categoria = item.get("categoria", "")
-                lines.append(f"{num}. 🔧 {ubicacion} — {desc}")
-                lines.append(f"   Categoría: {categoria} | Prioridad: {prioridad} | Estado: {estado}")
-            elif tipo == ReportType.GUEST_INTEL:
-                lines.append(f"{num}. 👤 {desc}")
-            elif tipo == ReportType.OBSERVACION:
-                lines.append(f"{num}. 📊 {desc}")
-            lines.append("")
-            num += 1
-        await update.message.reply_text("\n".join(lines))
+        display_id = storage.generate_display_id(ReportType.REPORT, report_id)
+        text = report_processor.render_shift_report(
+            report.get("items", []), display_id=display_id,
+            employee_name=report.get("employee_name", ""),
+            department=report.get("employee_department"),
+            closed_at=report.get("closed_at"),
+        )
+        await update.message.reply_text(text)
         return
 
     # /reporte sin args → consolidate last DEFAULT_HOURS

@@ -18,9 +18,9 @@ def get_help_text(role: str, department: str | None = None) -> str:
             "/historial INC-N — historial completo de una incidencia\n"
             "/help — esta ayuda\n"
             "/debug on|off — modo verboso\n\n"
-            "📋 Reportes de turno\n"
-            "/reporte — abrir reporte acumulativo\n"
-            "/fin — cerrar reporte y procesar\n\n"
+            "📋 Informe de turno (todo lo del turno se guarda solo)\n"
+            "/reporte — armá tu informe del turno (lo cargado)\n"
+            "/fin — cerrá y enviá el informe (igual que /reporte)\n\n"
             "⚙️ Configurar\n"
             "/notificaciones — gestionar tus notificaciones"
         )
@@ -40,9 +40,9 @@ def get_help_text(role: str, department: str | None = None) -> str:
             "/historial INC-N — historial de una incidencia\n"
             "/help — esta ayuda\n"
             "/debug on|off — modo verboso\n\n"
-            "📋 Reportes de turno\n"
-            "/reporte — abrir reporte acumulativo\n"
-            "/fin — cerrar reporte y procesar"
+            "📋 Informe de turno (todo lo del turno se guarda solo)\n"
+            "/reporte — armá tu informe del turno (lo cargado)\n"
+            "/fin — cerrá y enviá el informe (igual que /reporte)"
         )
     return (
         "🤖 Comandos disponibles\n\n"
@@ -57,5 +57,5 @@ def get_help_text(role: str, department: str | None = None) -> str:
         "/debug on|off — modo verboso\n\n"
         "📋 Reportes de turno\n"
         "/reporte — abrir reporte acumulativo\n"
-        "/fin — cerrar reporte y procesar"
+        "/fin — cerrá y enviá el informe (igual que /reporte)"
     )

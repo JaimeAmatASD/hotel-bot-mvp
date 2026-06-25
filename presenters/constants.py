@@ -1,11 +1,20 @@
 """Emoji constants for presentation."""
-from config.enums import Priority, ReportType
+from config.enums import Priority, ReportType, IncidentState
 
 PRIORIDAD_EMOJI = {
     Priority.CRITICA: "🔴",
     Priority.ALTA: "🟠",
     Priority.MEDIA: "🟡",
     Priority.BAJA: "🟢",
+}
+
+ESTADO_EMOJI = {
+    IncidentState.NUEVA: "🆕",
+    IncidentState.ASIGNADA: "👤",
+    IncidentState.EN_PROCESO: "🔧",
+    IncidentState.RESUELTA: "☑️",
+    IncidentState.CERRADA: "✅",
+    IncidentState.CANCELADA: "🚫",
 }
 
 TIPO_EMOJI = {
