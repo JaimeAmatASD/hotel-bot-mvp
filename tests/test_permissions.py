@@ -127,6 +127,14 @@ def test_can_see_empleado_no_ve_reportes_ajenos():
     assert can_see_incident(ana, INC_OTRA_PERSONA) is False
 
 
+def test_can_see_empleado_ve_lo_asignado_a_el():
+    """Un empleado ve una incidencia que NO reportó pero que le fue asignada."""
+    ana = EMPLOYEES[1001]
+    inc_asignada = {"categoria": "MANTENIMIENTO", "employee_name": "Otro Empleado",
+                    "assigned_to_telegram_id": 1001}
+    assert can_see_incident(ana, inc_asignada) is True
+
+
 def test_can_see_gerente_ve_todo():
     alfredo = EMPLOYEES[3001]
     assert can_see_incident(alfredo, INC_LIMPIEZA) is True

@@ -9,8 +9,10 @@ from storage import (
 from permissions import get_role, filter_visible_incidents, can_query_department, _incident_department
 from config.enums import IncidentState, Role, NotificationMode, ReportType
 from handlers import (
-    format_incident_list, format_room_view, get_help_text, format_incident_history,
+    format_incident_line, format_incident_list, format_room_view, get_help_text,
+    format_incident_history,
 )
+from notifier import build_keyboard_for_state
 import re
 import storage
 import permissions
@@ -186,6 +188,28 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = user.get("rol", "EMPLEADO") if user else "EMPLEADO"
     department = user.get("departamento") if user else None
     await update.message.reply_text(get_help_text(role, department))
+
+
+async def handle_mistareas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Lista las incidencias asignadas al usuario, cada una con sus botones."""
+    tid = update.effective_user.id
+    employees = context.bot_data.get("employees", {})
+    user = employees.get(tid)
+    if not user:
+        await update.message.reply_text("No estás registrado en el sistema.")
+        return
+
+    tareas = storage.get_incidents_assigned_to(tid)
+    if not tareas:
+        await update.message.reply_text("✅ No tenés tareas asignadas pendientes.")
+        return
+
+    await update.message.reply_text(f"🧰 Tenés {len(tareas)} tarea(s) asignada(s):")
+    for inc in tareas:
+        keyboard = build_keyboard_for_state(inc["id"], inc.get("estado") or IncidentState.ASIGNADA)
+        await update.message.reply_text(
+            format_incident_line(inc, employees), reply_markup=keyboard
+        )
 
 
 _DEFAULT_HOURS = 12

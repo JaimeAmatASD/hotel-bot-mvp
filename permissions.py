@@ -52,14 +52,16 @@ def can_see_incident(user: dict, incident: dict) -> bool:
     """
     GERENTE_GENERAL ve todas.
     ENCARGADO ve las de su departamento.
-    EMPLEADO ve las que él reportó (por employee_name).
+    EMPLEADO ve las que él reportó (por employee_name) y las asignadas a él.
     """
     rol = user.get("rol", Role.EMPLEADO)
     if rol == Role.GERENTE_GENERAL:
         return True
     if rol == Role.ENCARGADO:
         return user.get("departamento") == _incident_department(incident)
-    return incident.get("employee_name") == user.get("nombre")
+    if incident.get("employee_name") == user.get("nombre"):
+        return True
+    return _is_assignee(user, incident)
 
 
 def get_notification_recipients(incident: dict, employees: dict) -> list[int]:

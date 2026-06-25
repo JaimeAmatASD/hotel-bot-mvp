@@ -318,6 +318,64 @@ async def test_delegation_full_lifecycle_and_reopen():
 
 
 @pytest.mark.asyncio
+async def test_employee_terminates_directly_from_assigned():
+    """El empleado puede saltarse 'comenzar' y marcar 'terminado' directo desde ASIGNADA."""
+    from handlers.callback_handler import _handle_incident_action
+
+    incident_id = seed_classification(EMP_HK, INCIDENCIA_204, "Fuga en la 204")
+    storage.update_incident_state_atomic(incident_id, "ASIGNADA", ENC_MANT, ["NUEVA"],
+                                         action="asignar", assignee_telegram_id=EMP_MANT["telegram_id"])
+
+    context = make_context()
+    with patch("handlers.callback_handler.notifier.notify_managers_resolved", new=AsyncMock()), \
+         patch("handlers.callback_handler.notifier.notify_employee_state_change", new=AsyncMock()), \
+         patch("handlers.callback_handler.sheets_sync.sync_incidencia", new=_noop_async):
+        upd = make_callback_update(EMP_MANT["telegram_id"], f"incident_action:{incident_id}:terminado")
+        await _handle_incident_action(upd.callback_query, context)
+
+    inc = storage.get_incident(incident_id)
+    assert inc["estado"] == "RESUELTA"
+    assert int(inc["resolved_by"]) == EMP_MANT["telegram_id"]
+
+
+@pytest.mark.asyncio
+async def test_mistareas_lists_assigned_tasks_with_buttons():
+    """/mistareas le muestra al empleado solo lo asignado a él, con botones de acción."""
+    from handlers.command_handler import handle_mistareas
+
+    # Una asignada a Andrei, otra a otra persona (no debe verla)
+    mine = seed_classification(EMP_HK, INCIDENCIA_204, "Fuga mía en la 204")
+    storage.update_incident_state_atomic(mine, "ASIGNADA", ENC_MANT, ["NUEVA"],
+                                         action="asignar", assignee_telegram_id=EMP_MANT["telegram_id"])
+    other = seed_classification(EMP_HK, INCIDENCIA_204, "Fuga ajena")
+    storage.update_incident_state_atomic(other, "ASIGNADA", ENC_MANT, ["NUEVA"],
+                                         action="asignar", assignee_telegram_id=ENC_MANT["telegram_id"])
+
+    context = make_context()
+    update = make_message_update(EMP_MANT["telegram_id"], "/mistareas")
+    await handle_mistareas(update, context)
+
+    # Primer reply = encabezado con el conteo; luego una tarjeta por tarea con teclado
+    calls = update.message.reply_text.call_args_list
+    header = calls[0].args[0] if calls[0].args else calls[0].kwargs["text"]
+    assert "1 tarea" in header
+    task_call = calls[1]
+    kb = task_call.kwargs["reply_markup"]
+    cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
+    assert f"incident_action:{mine}:terminado" in cbs
+    assert all(str(other) not in c.split(":")[1] for c in cbs)
+
+
+@pytest.mark.asyncio
+async def test_mistareas_empty_when_nothing_assigned():
+    from handlers.command_handler import handle_mistareas
+    context = make_context()
+    update = make_message_update(EMP_MANT["telegram_id"], "/mistareas")
+    await handle_mistareas(update, context)
+    assert "No tenés tareas" in latest_reply_text(update)
+
+
+@pytest.mark.asyncio
 async def test_assigned_employee_only_can_act_on_own_incident():
     """Un empleado no puede ejecutar acciones sobre una incidencia asignada a otro."""
     from handlers.callback_handler import _handle_incident_action

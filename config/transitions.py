@@ -24,7 +24,8 @@ EXPECTED_FROM = {
     "reasignar": [IncidentState.ASIGNADA, IncidentState.EN_PROCESO],
     "reabrir":   [IncidentState.RESUELTA],
     "comenzar":  [IncidentState.ASIGNADA],
-    "terminado": [IncidentState.EN_PROCESO],
+    # 'comenzar' (EN_PROCESO) es opcional: se puede terminar directo desde ASIGNADA
+    "terminado": [IncidentState.EN_PROCESO, IncidentState.ASIGNADA],
     "validar":   [IncidentState.RESUELTA],
     "cancelar":  [IncidentState.NUEVA, IncidentState.ASIGNADA,
                   IncidentState.EN_PROCESO, IncidentState.RESUELTA],

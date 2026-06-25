@@ -3,6 +3,7 @@ import storage
 from config import settings
 from config.enums import IncidentState, ReportType
 from presenters import build_timeline_text, calculate_total_time
+from notifier.format import build_keyboard_for_state
 from notifier.sender import as_sender
 
 
@@ -81,10 +82,11 @@ async def notify_assignee(bot, incident: dict, employees: dict) -> None:
     display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident["id"])
     desc = incident.get("descripcion", "")
     ubic = incident.get("ubicacion", "")
-    text = f"🔔 Nueva tarea asignada — {display_id}\n🔧 {desc}\n📍 {ubic}\nEntrá a tus pendientes para empezar."
+    text = f"🔔 Nueva tarea asignada — {display_id}\n🔧 {desc}\n📍 {ubic}\nCuando puedas, marcá tu avance acá abajo 👇"
+    keyboard = build_keyboard_for_state(incident["id"], IncidentState.ASIGNADA)
     sender = as_sender(bot)
     try:
-        await sender.send_text(chat_id=_resolve_recipient(tid), text=text)
+        await sender.send_text(chat_id=_resolve_recipient(tid), text=text, reply_markup=keyboard)
     except Exception:
         pass
 

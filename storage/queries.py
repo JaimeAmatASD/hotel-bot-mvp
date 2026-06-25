@@ -25,6 +25,20 @@ def get_open_incidents(prioridad: str | None = None, limit: int = 100) -> list[d
     return [dict(r) for r in rows]
 
 
+def get_incidents_assigned_to(telegram_id: int, limit: int = 100) -> list[dict]:
+    """Incidencias no terminales asignadas a una persona (para /mistareas)."""
+    with _conn() as con:
+        rows = con.execute(
+            f"""SELECT * FROM classifications
+                WHERE tipo = 'INCIDENCIA'
+                  AND assigned_to_telegram_id = ?
+                  AND estado IN ('ASIGNADA', 'EN_PROCESO', 'RESUELTA')
+                ORDER BY {_PRIORITY_ORDER} ASC, timestamp ASC LIMIT ?""",
+            (str(telegram_id), limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_employees():
     with _conn() as con:
         rows = con.execute("""

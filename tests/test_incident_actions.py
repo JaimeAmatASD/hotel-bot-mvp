@@ -162,6 +162,8 @@ class TestKeyboard(unittest.TestCase):
         kb = build_keyboard_for_state(42, "ASIGNADA")
         cbs = self._callbacks(kb)
         self.assertIn("incident_action:42:comenzar", cbs)
+        # 'comenzar' es opcional: desde ASIGNADA se puede terminar directo
+        self.assertIn("incident_action:42:terminado", cbs)
         self.assertIn("incident_action:42:reasignar", cbs)
 
     def test_keyboard_en_proceso(self):

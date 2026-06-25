@@ -119,6 +119,32 @@ class TestStorageQueries(unittest.TestCase):
         results = storage.search_classifications("")
         self.assertGreaterEqual(len(results), 0)  # behavior may vary; just don't crash
 
+    def _insert_assigned(self, assigned_tid, estado="ASIGNADA"):
+        ts = datetime.now().isoformat(timespec="seconds")
+        with storage._conn() as con:
+            cur = con.execute(
+                """INSERT INTO classifications
+                   (timestamp, employee_name, employee_dept, message, tipo, prioridad,
+                    categoria, ubicacion, descripcion, estado, assigned_to_telegram_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (ts, "Jaime A", "SPA", "msg", "INCIDENCIA", "ALTA",
+                 "MANTENIMIENTO", "Hab 47", "Test", estado, str(assigned_tid)),
+            )
+            return cur.lastrowid
+
+    # get_incidents_assigned_to devuelve solo las del asignado y no terminales
+    def test_assigned_to_filters_by_person_and_open(self):
+        self._insert_assigned(777, estado="ASIGNADA")
+        self._insert_assigned(777, estado="EN_PROCESO")
+        self._insert_assigned(777, estado="CERRADA")   # terminal: excluida
+        self._insert_assigned(999, estado="ASIGNADA")   # otra persona: excluida
+        results = storage.get_incidents_assigned_to(777)
+        self.assertEqual(len(results), 2)
+        estados = {r["estado"] for r in results}
+        self.assertNotIn("CERRADA", estados)
+        for r in results:
+            self.assertEqual(str(r["assigned_to_telegram_id"]), "777")
+
 
 # ---------------------------------------------------------------------------
 # Formatter tests

@@ -22,9 +22,9 @@ def build_keyboard_for_state(incident_id: int, estado: str) -> InlineKeyboardMar
     buttons_by_state = {
         IncidentState.NUEVA:      [[("👤 Asignar", cb("asignar")), ("🙋 Tomar", cb("tomar"))],
                                    [("❌ Cancelar", cb("cancelar"))]],
-        IncidentState.ASIGNADA:   [[("⏳ Comenzar", cb("comenzar")), ("🔄 Reasignar", cb("reasignar"))],
-                                   [("❌ Cancelar", cb("cancelar"))]],
-        IncidentState.EN_PROCESO: [[("✅ Trabajo terminado", cb("terminado"))],
+        IncidentState.ASIGNADA:   [[("⏳ Lo estoy haciendo", cb("comenzar")), ("✅ Lo terminé", cb("terminado"))],
+                                   [("🔄 Reasignar", cb("reasignar")), ("❌ Cancelar", cb("cancelar"))]],
+        IncidentState.EN_PROCESO: [[("✅ Lo terminé", cb("terminado"))],
                                    [("🔄 Reasignar", cb("reasignar")), ("❌ Cancelar", cb("cancelar"))]],
         IncidentState.RESUELTA:   [[("✅ Validar y cerrar", cb("validar")), ("↩️ Reabrir", cb("reabrir"))],
                                    [("❌ Cancelar", cb("cancelar"))]],

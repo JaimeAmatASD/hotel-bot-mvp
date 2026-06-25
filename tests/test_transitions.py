@@ -26,7 +26,9 @@ def test_action_to_state_cubre_todas_las_acciones():
 
 def test_expected_from_correctos():
     assert EXPECTED_FROM["comenzar"] == [IncidentState.ASIGNADA]
-    assert EXPECTED_FROM["terminado"] == [IncidentState.EN_PROCESO]
+    # 'terminado' admite EN_PROCESO y también ASIGNADA (comenzar es opcional)
+    assert IncidentState.EN_PROCESO in EXPECTED_FROM["terminado"]
+    assert IncidentState.ASIGNADA in EXPECTED_FROM["terminado"]
     assert EXPECTED_FROM["validar"] == [IncidentState.RESUELTA]
     assert EXPECTED_FROM["reabrir"] == [IncidentState.RESUELTA]
     assert IncidentState.NUEVA in EXPECTED_FROM["cancelar"]

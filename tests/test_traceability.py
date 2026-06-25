@@ -104,6 +104,19 @@ class TestEventLog(unittest.TestCase):
         self.assertEqual(events[0]["action"], "action_rejected_already_done")
         self.assertEqual(events[0]["success"], 0)
 
+    # 5b. terminado directo desde ASIGNADA (comenzar es opcional)
+    def test_atomic_terminado_directo_desde_asignada(self):
+        from config.transitions import EXPECTED_FROM
+        iid = self._seed_incident("ASIGNADA")
+        result = storage.update_incident_state_atomic(
+            iid, "RESUELTA", self.ACTOR_CARLOS, EXPECTED_FROM["terminado"], action="terminado")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["from_state"], "ASIGNADA")
+        self.assertEqual(result["to_state"], "RESUELTA")
+        events = storage.get_events_for_incident(iid)
+        self.assertEqual(events[-1]["action"], "terminado")
+        self.assertEqual(events[-1]["success"], 1)
+
     # 6. CERRADA→cualquier: rechaza
     def test_atomic_rejected_cerrada(self):
         iid = self._seed_incident("CERRADA")

@@ -296,7 +296,8 @@ async def test_notify_assignee_envia_al_asignado():
     bot = MagicMock()
     sent = {}
     class FakeSender:
-        async def send_text(self, chat_id, text): sent["chat"] = chat_id; sent["text"] = text
+        async def send_text(self, chat_id, text, reply_markup=None):
+            sent["chat"] = chat_id; sent["text"] = text; sent["markup"] = reply_markup
     with patch("notifier.state_change.as_sender", return_value=FakeSender()), \
          patch("notifier.state_change.settings") as s:
         s.NOTIFICATION_REDIRECT_MODE = "off"
@@ -304,6 +305,10 @@ async def test_notify_assignee_envia_al_asignado():
         await notify_assignee(bot=bot, incident=incident, employees=employees)
     assert sent["chat"] == 222222222
     assert "ventilador" in sent["text"].lower() or "tarea" in sent["text"].lower()
+    # La notificación trae los botones de acción del asignado (ASIGNADA)
+    cbs = [b.callback_data for row in sent["markup"].inline_keyboard for b in row]
+    assert "incident_action:7:terminado" in cbs
+    assert "incident_action:7:comenzar" in cbs
 
 
 @pytest.mark.asyncio
