@@ -649,3 +649,58 @@ async def test_employee_cannot_read_other_employee_incident_history():
     await handle_historial(update, context)
 
     assert latest_reply_text(update) == "No tenés permiso para ver esa incidencia."
+
+
+@pytest.mark.asyncio
+async def test_sector_rollup_combines_types_and_gerente_gated(monkeypatch):
+    """Varios ítems del sector → /reporte sector muestra el combinado; con el flag
+    off el gerente no recibe el informe per-persona por el bot."""
+    from handlers.command_handler import handle_reporte
+    from handlers.callback_handler import handle_callback
+
+    monkeypatch.setattr("report_processor.settings.REPORT_NOTIFY_GERENTE", False)
+
+    # EMP_MANT carga tres ítems: INCIDENCIA (abierta), OBSERVACION, GUEST_INTEL
+    seed_classification(
+        EMP_MANT,
+        {"tipo": "INCIDENCIA", "prioridad": "ALTA", "categoria": "MANTENIMIENTO",
+         "ubicacion": "Hab 8", "descripcion": "baño roto"},
+        "baño roto en Hab 8",
+    )
+    seed_classification(
+        EMP_MANT,
+        {"tipo": "OBSERVACION", "ubicacion": "Pisos", "descripcion": "ronda sin novedad"},
+        "ronda sin novedad",
+    )
+    seed_classification(
+        EMP_MANT,
+        {"tipo": "GUEST_INTEL", "ubicacion": "Hab 45", "descripcion": "huésped pide toallas"},
+        "huésped pide toallas",
+    )
+
+    # 1. ENC_MANT pide el rollup del sector → debe ver los tres ítems y el bloque ABIERTAS
+    enc_ctx = make_context()
+    enc_ctx.args = ["sector"]
+    upd = make_message_update(ENC_MANT["telegram_id"], "/reporte sector")
+    await handle_reporte(upd, enc_ctx)
+    text = latest_reply_text(upd)
+    assert "ESTADO DEL SECTOR — MANTENIMIENTO" in text
+    assert "baño roto" in text
+    assert "ronda sin novedad" in text
+    assert "huésped pide toallas" in text
+    assert "ABIERTAS EN EL SECTOR" in text  # la INCIDENCIA en estado NUEVA
+
+    # 2. Con REPORT_NOTIFY_GERENTE=False, el gerente no recibe el informe de turno
+    # Ponemos al gerente en modo "todo" para que, si el flag estuviera on, sí recibiría
+    storage.set_notification_mode(GERENTE["telegram_id"], "todo")
+    emp_ctx = make_context()
+    rep_upd = make_message_update(EMP_MANT["telegram_id"], "/reporte")
+    with patch("config.settings.NOTIFICATION_REDIRECT_MODE", "off"), \
+         patch("handlers.callback_handler.sheets_sync.sync_reporte", new=_noop_async):
+        await handle_reporte(rep_upd, emp_ctx)
+        cb = make_callback_update(EMP_MANT["telegram_id"], "report_confirm_all")
+        await handle_callback(cb, emp_ctx)
+
+    sent_chats = [c.kwargs.get("chat_id") for c in emp_ctx.bot.send_message.call_args_list]
+    assert ENC_MANT["telegram_id"] in sent_chats    # encargado del depto siempre recibe
+    assert GERENTE["telegram_id"] not in sent_chats  # gerente bloqueado por REPORT_NOTIFY_GERENTE=False
