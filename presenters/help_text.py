@@ -20,7 +20,8 @@ def get_help_text(role: str, department: str | None = None) -> str:
             "/debug on|off — modo verboso\n\n"
             "📋 Informe de turno (todo lo del turno se guarda solo)\n"
             "/reporte — armá tu informe del turno (lo cargado)\n"
-            "/fin — cerrá y enviá el informe (igual que /reporte)\n\n"
+            "/fin — cerrá y enviá el informe (igual que /reporte)\n"
+            "/reporte sector <depto> [6h] — estado de un sector (solo lectura)\n\n"
             "⚙️ Configurar\n"
             "/notificaciones — gestionar tus notificaciones"
         )
@@ -42,7 +43,8 @@ def get_help_text(role: str, department: str | None = None) -> str:
             "/debug on|off — modo verboso\n\n"
             "📋 Informe de turno (todo lo del turno se guarda solo)\n"
             "/reporte — armá tu informe del turno (lo cargado)\n"
-            "/fin — cerrá y enviá el informe (igual que /reporte)"
+            "/fin — cerrá y enviá el informe (igual que /reporte)\n"
+            "/reporte sector [6h] — estado del sector en el turno (solo lectura)"
         )
     return (
         "🤖 Comandos disponibles\n\n"

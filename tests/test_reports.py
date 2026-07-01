@@ -441,5 +441,49 @@ class TestSectorRollup(Base):
         self.assertNotIn("INFORME DE TURNO", text)
 
 
+class TestReporteSectorCommand(Base):
+    def _ctx(self, user, employees, args):
+        ctx = MagicMock()
+        ctx.args = args
+        ctx.bot_data = {"employees": employees}
+        ctx.user_data = {}
+        return ctx
+
+    def _update(self, tid):
+        upd = MagicMock()
+        upd.effective_user.id = tid
+        upd.message.reply_text = AsyncMock()
+        return upd
+
+    def test_empleado_rechazado(self):
+        from handlers.command_handler import handle_reporte
+        emp = {"telegram_id": 1, "nombre": "Emp", "departamento": "SPA", "rol": "EMPLEADO"}
+        upd = self._update(1)
+        ctx = self._ctx(emp, {1: emp}, ["sector"])
+        asyncio.run(handle_reporte(upd, ctx))
+        msg = upd.message.reply_text.call_args.args[0]
+        self.assertIn("encargados", msg.lower())
+
+    def test_encargado_ve_su_sector(self):
+        from handlers.command_handler import handle_reporte
+        _insert_classification(str(self.db_path), "Sole", "OBSERVACION", "ronda spa")  # employee_dept=SPA
+        enc = {"telegram_id": 2, "nombre": "Enc SPA", "departamento": "SPA", "rol": "ENCARGADO"}
+        upd = self._update(2)
+        ctx = self._ctx(enc, {2: enc}, ["sector"])
+        asyncio.run(handle_reporte(upd, ctx))
+        msg = upd.message.reply_text.call_args.args[0]
+        self.assertIn("ESTADO DEL SECTOR — SPA", msg)
+        self.assertIn("ronda spa", msg)
+
+    def test_encargado_no_puede_otro_sector(self):
+        from handlers.command_handler import handle_reporte
+        enc = {"telegram_id": 2, "nombre": "Enc SPA", "departamento": "SPA", "rol": "ENCARGADO"}
+        upd = self._update(2)
+        ctx = self._ctx(enc, {2: enc}, ["sector", "MANTENIMIENTO"])
+        asyncio.run(handle_reporte(upd, ctx))
+        msg = upd.message.reply_text.call_args.args[0]
+        self.assertIn("acceso", msg.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

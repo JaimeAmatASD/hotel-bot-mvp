@@ -253,6 +253,35 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if args:
         arg = args[0]
 
+        if arg.lower() == "sector":
+            if not user:
+                await update.message.reply_text("❌ No estás registrado.")
+                return
+            if not permissions.is_manager(tid, employees):
+                await update.message.reply_text(
+                    "Solo encargados y gerencia pueden ver el estado del sector."
+                )
+                return
+            hours = 24
+            department = user.get("departamento")
+            for a in args[1:]:
+                if re.fullmatch(r"\d+h", a, re.IGNORECASE):
+                    hours = int(a[:-1])
+                else:
+                    department = a.upper()
+            if not department or department == "GENERAL":
+                await update.message.reply_text(
+                    "Indicá el sector: `/reporte sector MANTENIMIENTO`", parse_mode="Markdown"
+                )
+                return
+            if not can_query_department(user, department):
+                await update.message.reply_text("No tenés acceso a ese sector.")
+                return
+            items = report_processor.sector_items(department, hours)
+            text = report_processor.render_sector_rollup(items, department=department, hours=hours)
+            await update.message.reply_text(text)
+            return
+
         # /reporte 6h / 24h → consolidation with custom window
         if re.fullmatch(r"\d+h", arg, re.IGNORECASE):
             hours = int(arg[:-1])
