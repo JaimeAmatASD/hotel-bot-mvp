@@ -197,7 +197,8 @@ class TestConfirmReport(Base):
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
+        with patch("report_processor.settings.REPORT_NOTIFY_GERENTE", True):
+            asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
         bot.send_message.assert_called_once()
 
     def test_notify_includes_dept_encargado_regardless_of_mode(self):
@@ -255,6 +256,30 @@ class TestConfirmReport(Base):
         asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
         bot.send_message.assert_not_called()
 
+    def test_gerente_gated_by_flag_off(self):
+        items = self._make_items()  # EMPLOYEE es de SPA
+        rid = storage.create_report(self.EMPLOYEE)
+        storage.link_classifications_to_report([i["id"] for i in items], rid)
+        rep = storage.get_report_with_items(rid)
+
+        enc_spa = {"telegram_id": 5555, "nombre": "Sole Enc SPA",
+                   "departamento": "SPA", "rol": "ENCARGADO"}
+        employees = {
+            self.EMPLOYEE["telegram_id"]: self.EMPLOYEE,
+            enc_spa["telegram_id"]: enc_spa,
+            self.GERENTE["telegram_id"]: self.GERENTE,
+        }
+        storage.set_notification_mode(self.GERENTE["telegram_id"], "todo")  # querría recibir
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        with patch("report_processor.settings.REPORT_NOTIFY_GERENTE", False):
+            asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
+
+        sent_to = [c.kwargs.get("chat_id") for c in bot.send_message.call_args_list]
+        self.assertIn(5555, sent_to)                              # encargado del depto: sí
+        self.assertNotIn(self.GERENTE["telegram_id"], sent_to)    # gerente: NO (flag off)
+
 
 # ---------------------------------------------------------------------------
 # T5: "Corregir" + número que es INCIDENCIA → mensaje de bloqueo
@@ -311,7 +336,8 @@ class TestRedirectMode(Base):
 
         admin_id = 12345
         with patch("config.settings.NOTIFICATION_REDIRECT_MODE", "admin"), \
-             patch("config.settings.ADMIN_TELEGRAM_ID", admin_id):
+             patch("config.settings.ADMIN_TELEGRAM_ID", admin_id), \
+             patch("report_processor.settings.REPORT_NOTIFY_GERENTE", True):
             asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
 
         call_args = bot.send_message.call_args

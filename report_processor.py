@@ -165,6 +165,8 @@ async def notify_manager_report(bot, report: dict, items: list[dict], employees:
         if rol == Role.ENCARGADO and emp.get("departamento") == author_dept:
             pass  # el encargado del depto siempre recibe el informe de su equipo
         elif rol == Role.GERENTE_GENERAL:
+            if not settings.REPORT_NOTIFY_GERENTE:
+                continue
             if storage.get_notification_preferences(tid).get("mode") != NotificationMode.TODO:
                 continue
         else:
