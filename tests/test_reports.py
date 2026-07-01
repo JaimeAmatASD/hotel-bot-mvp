@@ -253,7 +253,8 @@ class TestConfirmReport(Base):
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
+        with patch("report_processor.settings.REPORT_NOTIFY_GERENTE", True):
+            asyncio.run(report_processor.notify_manager_report(bot, rep, items, employees))
         bot.send_message.assert_not_called()
 
     def test_gerente_gated_by_flag_off(self):
