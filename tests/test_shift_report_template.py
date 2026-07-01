@@ -40,7 +40,9 @@ def test_render_tiene_cabecera_y_secciones():
 def test_render_bloque_queda_pendiente_solo_abiertas():
     text = report_processor.render_shift_report(
         _items(), display_id="REP-014", employee_name="Jaime A", department="MANTENIMIENTO")
+    assert "Handover: 1 pendiente" in text
     assert "QUEDA PENDIENTE" in text
+    assert "Recibe seguimiento: MANTENIMIENTO" in text
     # La incidencia EN_PROCESO queda pendiente; la CERRADA no
     pend_section = text.split("QUEDA PENDIENTE")[1]
     assert "Luz parpadeando" in pend_section
@@ -58,3 +60,19 @@ def test_render_omite_secciones_vacias_y_pendiente_si_todo_cerrado():
     assert "NOTAS DE HUÉSPED" not in text
     assert "NOVEDADES DEL TURNO" not in text
     assert "QUEDA PENDIENTE" not in text
+
+
+def test_render_marca_contexto_de_huesped_en_incidencias_y_notas():
+    items = [
+        {"tipo": "INCIDENCIA", "ubicacion": "Hab 18", "descripcion": "Aire no enfría",
+         "prioridad": "ALTA", "estado": "NUEVA", "huesped_afectado": 1,
+         "habitacion_huesped": "18", "timestamp": "2026-06-25T09:00:00"},
+        {"tipo": "GUEST_INTEL", "ubicacion": "Hab 22", "descripcion": "Prefiere almohada baja",
+         "tipo_nota_huesped": "PREFERENCIA", "habitacion_huesped": "22",
+         "timestamp": "2026-06-25T09:10:00"},
+    ]
+    text = report_processor.render_shift_report(
+        items, display_id="REP-016", employee_name="Ana", department="RECEPCION")
+    assert "huésped afectado" in text
+    assert "huésped hab 18" in text
+    assert "preferencia" in text

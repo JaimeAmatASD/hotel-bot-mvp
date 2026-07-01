@@ -14,6 +14,47 @@ _DIVIDER = "──────────────────────�
 _TERMINAL_STATES = {IncidentState.CERRADA, IncidentState.CANCELADA}
 
 
+def _value(item: dict, key: str) -> str:
+    return str(item.get(key) or "").strip()
+
+
+def _guest_context(item: dict) -> str:
+    parts = []
+    if item.get("huesped_afectado"):
+        parts.append("huésped afectado")
+    habitacion = _value(item, "habitacion_huesped")
+    if habitacion:
+        parts.append(f"huésped hab {habitacion}")
+    nota = _value(item, "tipo_nota_huesped")
+    if nota:
+        parts.append(nota.lower())
+    return f" · {' · '.join(parts)}" if parts else ""
+
+
+def _incident_line(prefix: str, item: dict) -> str:
+    estado = item.get("estado") or IncidentState.NUEVA
+    em = ESTADO_EMOJI.get(estado, "")
+    ubic = _value(item, "ubicacion") or "Sin ubicación"
+    desc = _value(item, "descripcion") or "Sin descripción"
+    prio = _value(item, "prioridad")
+    prio_part = f" · {prio}" if prio else ""
+    return f"{prefix} {ubic} — {desc}{prio_part} · {em} {estado}{_guest_context(item)}"
+
+
+def _guest_line(prefix: str, item: dict) -> str:
+    ubic = _value(item, "ubicacion")
+    desc = _value(item, "descripcion") or "Sin descripción"
+    prefix_text = f"{ubic} — " if ubic else ""
+    return f"{prefix} {prefix_text}{desc}{_guest_context(item)}"
+
+
+def _observation_line(prefix: str, item: dict) -> str:
+    ubic = _value(item, "ubicacion")
+    desc = _value(item, "descripcion") or "Sin descripción"
+    prefix_text = f"{ubic} — " if ubic else ""
+    return f"{prefix} {prefix_text}{desc}"
+
+
 def _time_range(items: list[dict]) -> str:
     """'25/06 · 08:10–15:45' a partir de los timestamps de los ítems."""
     stamps = sorted(i.get("timestamp", "") for i in items if i.get("timestamp"))
@@ -39,25 +80,17 @@ def _render_item_sections(items: list[dict]) -> tuple[list[str], list[dict]]:
     if incidencias:
         lines.append(f"🔧 INCIDENCIAS ({len(incidencias)})")
         for it in incidencias:
-            estado = it.get("estado") or IncidentState.NUEVA
-            em = ESTADO_EMOJI.get(estado, "")
-            ubic = it.get("ubicacion", "") or ""
-            desc = it.get("descripcion", "") or ""
-            prio = it.get("prioridad", "") or ""
-            lines.append(f" {num}. {ubic} — {desc} · {prio} · {em} {estado}".replace("  ", " "))
+            lines.append(_incident_line(f"{num}.", it))
             num += 1
     if guest:
         lines.append(f"👤 NOTAS DE HUÉSPED ({len(guest)})")
         for it in guest:
-            ubic = it.get("ubicacion", "") or ""
-            desc = it.get("descripcion", "") or ""
-            prefix = f"{ubic} — " if ubic else ""
-            lines.append(f" {num}. {prefix}{desc}")
+            lines.append(_guest_line(f"{num}.", it))
             num += 1
     if obs:
         lines.append(f"📝 NOVEDADES DEL TURNO ({len(obs)})")
         for it in obs:
-            lines.append(f" {num}. {it.get('descripcion', '') or ''}")
+            lines.append(_observation_line(f"{num}.", it))
             num += 1
 
     pendientes = [i for i in incidencias
@@ -82,15 +115,17 @@ def render_shift_report(items: list[dict], *, display_id: str, employee_name: st
     ]
 
     section_lines, pendientes = _render_item_sections(items)
+    if pendientes:
+        lines.append(f"🎯 Handover: {len(pendientes)} pendiente(s) para el próximo turno")
+        lines.append(_DIVIDER)
     lines.extend(section_lines)
 
     if pendientes:
         lines.append("⏳ QUEDA PENDIENTE PARA EL PRÓXIMO TURNO")
         for it in pendientes:
-            ubic = it.get("ubicacion", "") or ""
-            desc = it.get("descripcion", "") or ""
-            estado = it.get("estado") or IncidentState.NUEVA
-            lines.append(f" • {ubic} — {desc} ({estado})")
+            lines.append(_incident_line("•", it))
+        if department:
+            lines.append(f"Recibe seguimiento: {department}")
 
     lines.append(_DIVIDER)
     if closed_at:
@@ -134,10 +169,7 @@ def render_sector_rollup(items: list[dict], *, department: str, hours: int) -> s
     if abiertas:
         lines.append("⏳ ABIERTAS EN EL SECTOR")
         for it in abiertas:
-            ubic = it.get("ubicacion", "") or ""
-            desc = it.get("descripcion", "") or ""
-            estado = it.get("estado") or IncidentState.NUEVA
-            lines.append(f" • {ubic} — {desc} ({estado})")
+            lines.append(_incident_line("•", it))
     lines.append(_DIVIDER)
     return "\n".join(lines)
 

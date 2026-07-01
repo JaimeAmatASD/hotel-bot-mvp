@@ -4,6 +4,11 @@
 
 # Base de datos local (se genera automáticamente)
 data/
+storage/*.db
+
+# Logs y capturas locales de testing
+*.log
+screenshot/
 
 # Python
 __pycache__/
