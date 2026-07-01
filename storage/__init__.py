@@ -40,6 +40,7 @@ from storage.reports import (
     link_classification_to_report,
     link_classifications_to_report,
     get_classifications_for_employee_recent,
+    get_classifications_recent,
 )
 from storage.queries import (
     get_open_incidents,
@@ -62,7 +63,7 @@ __all__ = [
     "get_notification_preferences", "set_notification_mode", "toggle_excluded_department",
     "create_report", "get_report_with_items",
     "link_classification_to_report", "link_classifications_to_report",
-    "get_classifications_for_employee_recent",
+    "get_classifications_for_employee_recent", "get_classifications_recent",
     "get_open_incidents", "get_incidents_assigned_to", "get_resolved_incidents",
     "get_employees", "get_employee_stats", "get_all_history",
 ]

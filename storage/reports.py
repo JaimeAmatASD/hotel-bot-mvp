@@ -72,3 +72,18 @@ def get_classifications_for_employee_recent(
     with _conn() as con:
         rows = con.execute(query, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_classifications_recent(hours: int) -> list[dict]:
+    """Todas las clasificaciones en las últimas N horas (excluye NO_REPORTE/ERROR),
+    de cualquier empleado y sin importar si ya están en un reporte. Solo lectura."""
+    since = (datetime.now() - timedelta(hours=hours)).isoformat(timespec="seconds")
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT * FROM classifications
+               WHERE timestamp >= ?
+                 AND tipo NOT IN ('NO_REPORTE', 'ERROR')
+               ORDER BY timestamp ASC""",
+            (since,),
+        ).fetchall()
+    return [dict(r) for r in rows]

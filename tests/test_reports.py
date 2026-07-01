@@ -105,6 +105,19 @@ class TestStorageNew(Base):
         rid = storage.create_report(self.EMPLOYEE)
         storage.link_classifications_to_report([], rid)  # should not raise
 
+    def test_get_classifications_recent_all_employees_incl_reported(self):
+        _insert_classification(str(self.db_path), "Ana", "INCIDENCIA", "inc1")
+        _insert_classification(str(self.db_path), "Beto", "OBSERVACION", "obs1", report_id=99)  # ya en REP
+        _insert_classification(str(self.db_path), "Ana", "NO_REPORTE", "chau")                  # excluido
+        _insert_classification(str(self.db_path), "Ana", "INCIDENCIA", "viejo", hours_ago=48)   # fuera ventana
+
+        rows = storage.get_classifications_recent(24)
+        descs = [r["descripcion"] for r in rows]
+        self.assertIn("inc1", descs)
+        self.assertIn("obs1", descs)          # incluye ya-consolidados
+        self.assertNotIn("chau", descs)       # excluye NO_REPORTE
+        self.assertNotIn("viejo", descs)      # excluye fuera de ventana
+
 
 # ---------------------------------------------------------------------------
 # T1: /reporte sin ítems → mensaje "no reportaste nada"
