@@ -4,6 +4,7 @@ from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import storage
+import permissions
 from config import settings
 from config.enums import IncidentState, ReportType, NotificationMode, Role
 from notifier.sender import as_sender
@@ -26,13 +27,48 @@ def _time_range(items: list[dict]) -> str:
     return f"{first.strftime('%d/%m')} · {first.strftime('%H:%M')}–{last.strftime('%H:%M')}"
 
 
+def _render_item_sections(items: list[dict]) -> tuple[list[str], list[dict]]:
+    """Devuelve (líneas de secciones numeradas, incidencias abiertas). Compartido
+    por el informe per-persona y el rollup de sector."""
+    incidencias = [i for i in items if i.get("tipo") == ReportType.INCIDENCIA]
+    guest = [i for i in items if i.get("tipo") == ReportType.GUEST_INTEL]
+    obs = [i for i in items if i.get("tipo") == ReportType.OBSERVACION]
+
+    lines: list[str] = []
+    num = 1
+    if incidencias:
+        lines.append(f"🔧 INCIDENCIAS ({len(incidencias)})")
+        for it in incidencias:
+            estado = it.get("estado") or IncidentState.NUEVA
+            em = ESTADO_EMOJI.get(estado, "")
+            ubic = it.get("ubicacion", "") or ""
+            desc = it.get("descripcion", "") or ""
+            prio = it.get("prioridad", "") or ""
+            lines.append(f" {num}. {ubic} — {desc} · {prio} · {em} {estado}".replace("  ", " "))
+            num += 1
+    if guest:
+        lines.append(f"👤 NOTAS DE HUÉSPED ({len(guest)})")
+        for it in guest:
+            ubic = it.get("ubicacion", "") or ""
+            desc = it.get("descripcion", "") or ""
+            prefix = f"{ubic} — " if ubic else ""
+            lines.append(f" {num}. {prefix}{desc}")
+            num += 1
+    if obs:
+        lines.append(f"📝 NOVEDADES DEL TURNO ({len(obs)})")
+        for it in obs:
+            lines.append(f" {num}. {it.get('descripcion', '') or ''}")
+            num += 1
+
+    pendientes = [i for i in incidencias
+                  if (i.get("estado") or IncidentState.NUEVA) not in _TERMINAL_STATES]
+    return lines, pendientes
+
+
 def render_shift_report(items: list[dict], *, display_id: str, employee_name: str,
                         department: str | None, closed_at: str | None = None) -> str:
     """Plantilla única del informe de turno. Reutilizada por el resumen previo,
     la notificación al manager y /reporte REP-N."""
-    incidencias = [i for i in items if i.get("tipo") == ReportType.INCIDENCIA]
-    guest = [i for i in items if i.get("tipo") == ReportType.GUEST_INTEL]
-    obs = [i for i in items if i.get("tipo") == ReportType.OBSERVACION]
     total = len(items)
 
     rng = _time_range(items)
@@ -45,35 +81,9 @@ def render_shift_report(items: list[dict], *, display_id: str, employee_name: st
         _DIVIDER,
     ]
 
-    num = 1
-    if incidencias:
-        lines.append(f"🔧 INCIDENCIAS ({len(incidencias)})")
-        for it in incidencias:
-            estado = it.get("estado") or IncidentState.NUEVA
-            em = ESTADO_EMOJI.get(estado, "")
-            ubic = it.get("ubicacion", "") or ""
-            desc = it.get("descripcion", "") or ""
-            prio = it.get("prioridad", "") or ""
-            lines.append(f" {num}. {ubic} — {desc} · {prio} · {em} {estado}".replace("  ", " "))
-            num += 1
+    section_lines, pendientes = _render_item_sections(items)
+    lines.extend(section_lines)
 
-    if guest:
-        lines.append(f"👤 NOTAS DE HUÉSPED ({len(guest)})")
-        for it in guest:
-            ubic = it.get("ubicacion", "") or ""
-            desc = it.get("descripcion", "") or ""
-            prefix = f"{ubic} — " if ubic else ""
-            lines.append(f" {num}. {prefix}{desc}")
-            num += 1
-
-    if obs:
-        lines.append(f"📝 NOVEDADES DEL TURNO ({len(obs)})")
-        for it in obs:
-            lines.append(f" {num}. {it.get('descripcion', '') or ''}")
-            num += 1
-
-    pendientes = [i for i in incidencias
-                  if (i.get("estado") or IncidentState.NUEVA) not in _TERMINAL_STATES]
     if pendientes:
         lines.append("⏳ QUEDA PENDIENTE PARA EL PRÓXIMO TURNO")
         for it in pendientes:
@@ -89,6 +99,46 @@ def render_shift_report(items: list[dict], *, display_id: str, employee_name: st
             lines.append(f"Cerrado {ct} · /reporte {display_id} para ver")
         except ValueError:
             lines.append(f"/reporte {display_id} para ver")
+    return "\n".join(lines)
+
+
+def sector_items(department: str, hours: int) -> list[dict]:
+    """Ítems del sector en la ventana (read-only). Incidencias por categoría→depto;
+    observaciones/notas de huésped por el depto del que reportó."""
+    dept = department.upper()
+    out = []
+    for it in storage.get_classifications_recent(hours):
+        if it.get("tipo") == ReportType.INCIDENCIA:
+            item_dept = permissions._incident_department(it)
+        else:
+            item_dept = it.get("employee_dept") or ""
+        if item_dept.upper() == dept:
+            out.append(it)
+    return out
+
+
+def render_sector_rollup(items: list[dict], *, department: str, hours: int) -> str:
+    """Vista read-only del estado del sector en la ventana. No es un REP."""
+    total = len(items)
+    rng = _time_range(items)
+    meta = f"{rng} · " if rng else ""
+    lines = [
+        f"📋 ESTADO DEL SECTOR — {department}",
+        f"🕐 {meta}{total} ítem{'s' if total != 1 else ''} · últimas {hours}h",
+        _DIVIDER,
+    ]
+    section_lines, abiertas = _render_item_sections(items)
+    if not section_lines:
+        lines.append("Sin actividad en la ventana.")
+    lines.extend(section_lines)
+    if abiertas:
+        lines.append("⏳ ABIERTAS EN EL SECTOR")
+        for it in abiertas:
+            ubic = it.get("ubicacion", "") or ""
+            desc = it.get("descripcion", "") or ""
+            estado = it.get("estado") or IncidentState.NUEVA
+            lines.append(f" • {ubic} — {desc} ({estado})")
+    lines.append(_DIVIDER)
     return "\n".join(lines)
 
 

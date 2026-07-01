@@ -402,5 +402,44 @@ class TestFinAlias(Base):
         self.assertEqual(items, [])
 
 
+class TestSectorRollup(Base):
+    def test_sector_items_filters_by_department(self):
+        # Incidencia de MANTENIMIENTO (por categoría) reportada por alguien de SPA
+        import sqlite3
+        from datetime import datetime
+        ts = datetime.now().isoformat(timespec="seconds")
+        with sqlite3.connect(str(self.db_path)) as con:
+            con.execute(
+                """INSERT INTO classifications
+                   (timestamp, employee_name, employee_dept, message, tipo, prioridad,
+                    categoria, ubicacion, descripcion, confianza, campos_faltantes, report_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (ts, "Jaime A", "SPA", "m", "INCIDENCIA", "ALTA",
+                 "MANTENIMIENTO", "Hab 8", "baño roto", 0.9, "[]", None),
+            )
+        # Observación de un empleado de SPA → depto = SPA (employee_dept)
+        _insert_classification(str(self.db_path), "Sole", "OBSERVACION", "ronda spa")  # employee_dept=SPA
+
+        mant = report_processor.sector_items("MANTENIMIENTO", 24)
+        spa = report_processor.sector_items("SPA", 24)
+        self.assertEqual([i["descripcion"] for i in mant], ["baño roto"])
+        self.assertEqual([i["descripcion"] for i in spa], ["ronda spa"])
+
+    def test_render_sector_rollup_header_and_no_footer(self):
+        items = [
+            {"tipo": "INCIDENCIA", "estado": "NUEVA", "prioridad": "ALTA",
+             "ubicacion": "Hab 8", "descripcion": "baño roto",
+             "timestamp": "2026-07-01T08:00:00"},
+            {"tipo": "OBSERVACION", "descripcion": "ronda ok",
+             "timestamp": "2026-07-01T09:00:00"},
+        ]
+        text = report_processor.render_sector_rollup(items, department="MANTENIMIENTO", hours=24)
+        self.assertIn("ESTADO DEL SECTOR — MANTENIMIENTO", text)
+        self.assertIn("últimas 24h", text)
+        self.assertIn("ABIERTAS EN EL SECTOR", text)   # la incidencia NUEVA aparece
+        self.assertNotIn("Cerrado", text)              # no es un REP
+        self.assertNotIn("INFORME DE TURNO", text)
+
+
 if __name__ == "__main__":
     unittest.main()
