@@ -18,6 +18,10 @@ Rama activa: `feat/sprints-b3-b4-b5`
 | B.5 | Reportes de turno retrospectivos (/reporte, /fin) | `038aaa7` |
 | B.5.1 | Hardening pre-piloto (4 fixes de seguridad) | `dd14610` |
 | B.8 | Sync a Google Sheets (capa de visibilidad) | `27a2749` |
+| Work-order lifecycle | 6 estados (NUEVA→ASIGNADA→EN_PROCESO→RESUELTA→CERRADA + CANCELADA), delegación con picker, trazabilidad (assigned_by/resolved_by/...), validar/reabrir | `89f71bc`…`4581bb7` |
+| Flujo empleado | EN_PROCESO opcional + `/mistareas` + `/porvalidar` (cola del gerente) | `a096b29`…`38f01c0` |
+| Informe de turno | `/reporte` acumulativo con plantilla única + aviso al gerente gateado por `REPORT_NOTIFY_GERENTE` | `0fbeb3e`…`e436a3b` |
+| Reporte sector | `/reporte sector` — rollup read-only del sector (encargado/gerente) | `331b0ab`…`9567d78` |
 
 ## Refactor integral (post-B.8)
 
@@ -31,13 +35,16 @@ Rama activa: `feat/sprints-b3-b4-b5`
 **Métricas post-refactor:**
 - Handlers: 564 → 152 LoC (-73%)
 - `storage.py` 733 LoC → paquete con módulos por dominio
-- 178 tests verdes en suite normal (incluye 6 escenarios hoteleros E2E fake)
 - Cero cambios de comportamiento
-- Suite completa con integration: 183 tests totales si se corre `venv/bin/pytest -q -o addopts=''`
+
+**Métricas actuales (2026-07-02):**
+- 232 tests verdes en suite normal (`venv/bin/pytest -q`), 5 integration deselected
+- Suite completa con integration Gemini/Groq: `venv/bin/pytest -q -o addopts=''`
+- E2E hoteleros en `tests/test_hotel_scenarios.py`: ciclo work-order completo, delegación, reabrir, permisos, reportes
 
 ## Próximo
 
-Sin sprint planificado. **Fase de testeo con segundo teléfono (Juan, GERENTE_GENERAL).**
+Sin sprint planificado. **Piloto intra-sector: testeo real con Jaime (ENCARGADO SPA) y Juan (GERENTE_GENERAL).** `REPORT_NOTIFY_GERENTE=false` hasta validar el flujo con el encargado.
 
 ## Notas de testing activo
 

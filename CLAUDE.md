@@ -42,7 +42,7 @@ sheets_sync.py → espejo Google Sheets; SQLite sigue siendo la única fuente de
 
 ## Testing
 
-- Suite normal: `venv/bin/pytest -q` → 205 tests verdes, 5 integration deselected.
+- Suite normal: `venv/bin/pytest -q` → 232 tests verdes, 5 integration deselected.
 - Suite completa con APIs reales: `venv/bin/pytest -q -o addopts=''` → incluye integration Gemini/Groq.
 - Escenarios hoteleros E2E fake: `tests/test_hotel_scenarios.py` cubre empleado → confirmación → notificación, consultas gerente, followup, ciclo work-order completo (tomar/comenzar/terminado/validar), delegación encargado→empleado + reabrir, rechazo por permisos, reporte de turno y visibilidad de historial.
 - Integration tests de audio usan fixtures reales en `audios/`; no moverlos a `tests/integration/audios/`.

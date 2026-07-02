@@ -469,3 +469,44 @@ Los tests de audio buscaban fixtures en `tests/integration/audios/`, pero los `.
 versionados viven en `audios/`. Eso hacía que se saltaran dos tests reales aunque los
 fixtures existieran. La ruta correcta es desde `tests/integration/test_brain.py` hacia
 la raíz del repo: `Path(__file__).parent.parent.parent / "audios"`.
+
+## Work-order lifecycle + informes de turno (2026-06/07)
+
+### L-W1: Máquina de estados en un solo módulo de config, transición en una sola función
+
+Con 6 estados y 8 verbos, la tentación es chequear transiciones en cada handler.
+En su lugar: `config/transitions.py` define `ACTION_TO_STATE` y `EXPECTED_FROM` (única
+fuente de verdad declarativa) y `update_incident_state_atomic(action=...)` en
+`storage/events.py` es la ÚNICA función que muta estado — valida contra la tabla,
+escribe trazabilidad (`assigned_by/resolved_by/closed_by/cancelled_by`) y registra el
+evento en la misma transacción. Agregar un verbo nuevo = tocar la tabla, no los handlers.
+
+### L-W2: Renombrar un estado en producción — migración de datos + grep de literales
+
+Renombrar `ABIERTA` → `NUEVA` requirió tres frentes que se olvidan por separado:
+1) UPDATE de las filas existentes en la migración de schema, 2) grep de literales
+residuales en código (`948ce5e`), 3) grep de literales en tests (`4581bb7`).
+Los tests con el string viejo hardcodeado pasaban contra fixtures nuevos y ocultaban
+el bug. Regla: al renombrar un valor de dominio, grep global del literal viejo en
+TODO el repo antes de dar por cerrado el cambio.
+
+### L-W3: Pasos intermedios opcionales en flujos operativos (EN_PROCESO)
+
+En el hotel real, el empleado a veces marca "comenzar" y a veces va directo a "terminado".
+Forzar el paso intermedio agrega fricción sin valor. La tabla `EXPECTED_FROM` acepta
+`terminado` tanto desde `ASIGNADA` como desde `EN_PROCESO`. Regla: modelar los estados
+que la operación necesita auditar, no los que el diagrama sugiere como "completos".
+
+### L-W4: Feature flag de entorno para pilotos graduales
+
+`REPORT_NOTIFY_GERENTE=false` (default off) gatea el aviso automático al gerente al cerrar
+un informe de turno. Permite desplegar todo el código y activar el comportamiento por
+entorno cuando el piloto intra-sector lo valide, sin rama aparte ni redeploy de código.
+El test del filtro se ejercita con el flag ON explícito para no depender del default.
+
+### L-W5: Comandos de lectura agregada (rollup) — read-only estricto
+
+`/reporte sector` consolida clasificaciones recientes del sector sin tocar estado:
+`get_classifications_recent()` es solo SELECT y el formato reusa las mismas secciones
+compartidas del informe individual. Regla: un comando de consulta jamás muta — si el
+rollup necesitara "marcar como visto", eso es otra feature con su propia transición.
