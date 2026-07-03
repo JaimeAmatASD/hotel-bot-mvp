@@ -1,5 +1,6 @@
 """Item-level correction flows for the /reporte review screen.
 Shared by text and audio handlers — the difference is only how the text was obtained."""
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -37,7 +38,7 @@ async def handle_item_correction(
 
     item = next((i for i in report_items if i["id"] == item_id), None)
     previous_ctx = {"result": item, "original_text": item.get("message", "")} if item else None
-    new_result = process_message(text, employee, previous_context=previous_ctx)
+    new_result = await asyncio.to_thread(process_message, text, employee, previous_context=previous_ctx)
     storage.update_classification(item_id, new_result)
     if item:
         immutable = ("id", "timestamp", "employee_name", "employee_dept", "estado", "report_id")

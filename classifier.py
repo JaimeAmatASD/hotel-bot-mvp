@@ -15,7 +15,8 @@ def _get_client():
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY no encontrada en .env")
-        _client = genai.Client(api_key=api_key)
+        # timeout en ms: un cuelgue de la API no puede dejar al bot esperando indefinidamente
+        _client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=30_000))
     return _client
 
 SYSTEM_PROMPT = """Eres un asistente que estructura mensajes operativos del personal de un hotel boutique. El personal envía mensajes en su idioma (español, inglés, rumano, francés, alemán u otros) reportando incidencias, observaciones, o información sobre huéspedes. Tu única tarea es devolver un JSON válido siguiendo el esquema indicado.

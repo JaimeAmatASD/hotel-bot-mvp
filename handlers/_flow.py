@@ -1,4 +1,5 @@
 """Post-classification flow shared by text/audio/photo handlers."""
+import html
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -49,7 +50,7 @@ async def present_result(
         context.user_data["awaiting_followup"] = True
         context.user_data["followup_started_at"] = datetime.now().isoformat()
         if transcription:
-            await update.message.reply_text(f'🎤 <i>"{transcription}"</i>', parse_mode="HTML")
+            await update.message.reply_text(f'🎤 <i>"{html.escape(transcription)}"</i>', parse_mode="HTML")
         await update.message.reply_text(result["needs_followup"]["question"])
         return
 
@@ -60,7 +61,7 @@ async def present_result(
 
     parts = []
     if transcription:
-        parts.append(f'🎤 <i>"{transcription}"</i>\n')
+        parts.append(f'🎤 <i>"{html.escape(transcription)}"</i>\n')
     parts.append(summary)
     parts.append("\n<i>¿Es correcto?</i>")
 

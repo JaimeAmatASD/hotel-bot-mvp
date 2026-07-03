@@ -44,6 +44,8 @@ def init_db():
         cols = [row[1] for row in con.execute("PRAGMA table_info(classifications)").fetchall()]
         if "photo_path" not in cols:
             con.execute("ALTER TABLE classifications ADD COLUMN photo_path TEXT")
+        if "employee_telegram_id" not in cols:
+            con.execute("ALTER TABLE classifications ADD COLUMN employee_telegram_id INTEGER")
         pref_cols = [row[1] for row in con.execute("PRAGMA table_info(user_preferences)").fetchall()]
         if "notification_mode" not in pref_cols:
             con.execute("ALTER TABLE user_preferences ADD COLUMN notification_mode TEXT DEFAULT 'criticas'")

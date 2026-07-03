@@ -36,7 +36,7 @@ sheets_sync.py → espejo Google Sheets; SQLite sigue siendo la única fuente de
 ## Gotchas
 
 - `gh` CLI no está instalado; crear PRs manualmente en GitHub
-- `employees.json` — la mayoría de IDs son ficticios excepto los de testing real (Jaime 7391337590, Juan 8709342265 GERENTE_GENERAL)
+- `config/employees.json` (versionado) tiene solo IDs ficticios; los empleados reales de testing (Jaime, Juan) viven en `config/employees.local.json` (gitignoreado), que `load_employees()` mergea al arrancar. Si el bot corre en otra máquina, copiar ese archivo a mano.
 - `GOOGLE_SERVICE_ACCOUNT_JSON` y `SHEET_ID` requeridos en `.env` para sync a Sheets (Google Sheets API habilitada en proyecto GCP 726520795387)
 - `test_cases.py`, `test_extended.py`, `test_cross_department.py` en raíz son **archivos de datos** (no tests) importados por `evaluate.py` y `dashboard.py` — no moverlos a `tests/`
 

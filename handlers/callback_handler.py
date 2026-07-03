@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -13,6 +14,8 @@ import report_processor
 import sheets_sync
 from permissions import _incident_department
 
+logger = logging.getLogger(__name__)
+
 
 def _attach_assignee_name(incident: dict, employees: dict) -> dict:
     if incident.get("assigned_to_telegram_id"):
@@ -23,6 +26,14 @@ def _attach_assignee_name(incident: dict, employees: dict) -> dict:
 
 
 def _find_reporter(incident: dict, employees: dict) -> dict:
+    reporter_tid = incident.get("employee_telegram_id")
+    if reporter_tid is not None:
+        try:
+            emp = employees.get(int(reporter_tid))
+            if emp:
+                return emp
+        except (TypeError, ValueError):
+            pass
     reporter_name = incident.get("employee_name", "")
     return next(
         (emp for emp in employees.values() if emp.get("nombre") == reporter_name),
@@ -42,8 +53,8 @@ async def _refresh_message(query, incident, employees, actor_tid):
             await query.edit_message_caption(caption=msg, reply_markup=keyboard)
         else:
             await query.edit_message_text(text=msg, reply_markup=keyboard)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("No se pudo refrescar el mensaje de %s: %s", display_id, e)
     return display_id
 
 
@@ -124,41 +135,69 @@ async def _show_assign_picker(query, context, incident_id, incident, actor):
         kb = notifier.build_assign_keyboard(incident_id, targets)
     try:
         await query.edit_message_reply_markup(reply_markup=kb)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("No se pudo mostrar el picker de asignación de INC-%s: %s", incident_id, e)
     await query.answer("Elegí a quién asignar")
 
 
 async def _handle_assign_dept(query, context) -> None:
     """assign_dept:{incident_id}:{DEPTO} — gerente eligió depto, mostrar personas."""
-    _, incident_id_str, dept = query.data.split(":")
-    incident_id = int(incident_id_str)
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        await query.answer("Datos de asignación inválidos", show_alert=True)
+        return
+    _, incident_id_str, dept = parts
+    try:
+        incident_id = int(incident_id_str)
+    except ValueError:
+        await query.answer("Datos de asignación inválidos", show_alert=True)
+        return
     employees = context.bot_data["employees"]
     actor = employees.get(query.from_user.id)
     incident = storage.get_incident(incident_id)
     if not actor or not incident or not permissions.can_do_action(actor, incident, "asignar"):
         await query.answer("No tenés permisos", show_alert=True)
         return
+    # Solo el gerente elige depto libremente; el encargado queda dentro del depto de la incidencia.
+    if actor.get("rol") != "GERENTE_GENERAL" and dept != _incident_department(incident):
+        await query.answer("No tenés permisos sobre ese departamento", show_alert=True)
+        return
     targets = [(tid, e.get("nombre", "")) for tid, e in
                permissions.assignable_targets(actor, employees, dept)]
     kb = notifier.build_assign_keyboard(incident_id, targets)
     try:
         await query.edit_message_reply_markup(reply_markup=kb)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("No se pudo mostrar el picker de depto de INC-%s: %s", incident_id, e)
     await query.answer()
 
 
 async def _handle_assign_to(query, context) -> None:
     """assign_to:{incident_id}:{telegram_id} — asignación efectiva."""
-    _, incident_id_str, target_str = query.data.split(":")
-    incident_id = int(incident_id_str)
-    target_tid = int(target_str)
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        await query.answer("Datos de asignación inválidos", show_alert=True)
+        return
+    try:
+        incident_id = int(parts[1])
+        target_tid = int(parts[2])
+    except ValueError:
+        await query.answer("Datos de asignación inválidos", show_alert=True)
+        return
     employees = context.bot_data["employees"]
     actor = employees.get(query.from_user.id)
     incident = storage.get_incident(incident_id)
     if not actor or not incident or not permissions.can_do_action(actor, incident, "asignar"):
         await query.answer("No tenés permisos", show_alert=True)
+        return
+
+    target = employees.get(target_tid)
+    if not target:
+        await query.answer("Destinatario inválido", show_alert=True)
+        return
+    # El encargado solo asigna dentro del depto de la incidencia; el gerente, a cualquiera.
+    if actor.get("rol") != "GERENTE_GENERAL" and target.get("departamento") != _incident_department(incident):
+        await query.answer("No podés asignar fuera de tu departamento", show_alert=True)
         return
 
     result = storage.update_incident_state_atomic(

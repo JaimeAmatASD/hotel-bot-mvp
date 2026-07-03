@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from telegram import Update
@@ -34,7 +35,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("📸 Procesando foto...")
 
-    result = process_message(
+    result = await asyncio.to_thread(
+        process_message,
         caption,
         employee,
         image_path=str(photo_path),

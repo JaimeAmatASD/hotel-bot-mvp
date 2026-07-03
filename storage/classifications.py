@@ -10,14 +10,15 @@ def save(employee: dict, message: str, result: dict) -> int:
     with _conn() as con:
         cur = con.execute("""
             INSERT INTO classifications
-            (timestamp, employee_name, employee_dept, message, tipo, prioridad,
+            (timestamp, employee_name, employee_dept, employee_telegram_id, message, tipo, prioridad,
              categoria, ubicacion, confianza, campos_faltantes, habitacion,
              huesped_afectado, descripcion, photo_path, estado)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             datetime.now().isoformat(timespec="seconds"),
             employee["nombre"],
             employee.get("departamento"),
+            employee.get("telegram_id"),
             message,
             result.get("tipo"),
             result.get("prioridad"),

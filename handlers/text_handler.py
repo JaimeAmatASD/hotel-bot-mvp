@@ -1,3 +1,4 @@
+import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 from brain import process_message
@@ -26,5 +27,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⏱ Pasó mucho tiempo desde la corrección anterior, lo proceso como mensaje nuevo."
         )
 
-    result = process_message(text, employee, previous_context=state.previous)
+    # En thread: la llamada a Gemini es síncrona y no debe bloquear el event loop
+    result = await asyncio.to_thread(process_message, text, employee, previous_context=state.previous)
     await present_result(update, context, result, original_text=text)

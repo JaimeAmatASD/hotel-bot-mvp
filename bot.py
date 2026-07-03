@@ -24,9 +24,22 @@ from handlers.command_handler import (
 
 
 def load_employees() -> dict:
-    path = Path(__file__).parent / "config" / "employees.json"
-    data = json.loads(path.read_text())
-    return {e["telegram_id"]: e for e in data["employees"]}
+    """Carga employees.json y, si existe, mergea employees.local.json (no versionado).
+
+    El archivo local guarda los telegram_id reales para no commitearlos al repo.
+    Sus entradas agregan o pisan (por telegram_id) a las del archivo base.
+    """
+    config_dir = Path(__file__).parent / "config"
+    data = json.loads((config_dir / "employees.json").read_text())
+    employees = {e["telegram_id"]: e for e in data["employees"]}
+
+    local_path = config_dir / "employees.local.json"
+    if local_path.exists():
+        local = json.loads(local_path.read_text())
+        for e in local.get("employees", []):
+            employees[e["telegram_id"]] = e
+
+    return employees
 
 
 def main():

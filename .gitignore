@@ -32,3 +32,6 @@ config/google_service_account.json
 
 # Artefactos de herramientas
 .codex
+
+# Empleados reales (telegram_ids) - solo local
+config/employees.local.json

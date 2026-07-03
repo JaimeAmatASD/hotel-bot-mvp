@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 from telegram import Update
@@ -16,7 +17,7 @@ async def _transcribe_audio(bot, audio, employee) -> str:
         tmp_path = tmp.name
     try:
         await file.download_to_drive(tmp_path)
-        result = transcribe(tmp_path, language=employee.get("idioma"))
+        result = await asyncio.to_thread(transcribe, tmp_path, language=employee.get("idioma"))
         return result.get("text", "")
     finally:
         os.unlink(tmp_path)
@@ -58,7 +59,8 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await file.download_to_drive(tmp_path)
-        result = process_message(
+        result = await asyncio.to_thread(
+            process_message,
             tmp_path,
             employee,
             is_audio=True,

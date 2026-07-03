@@ -46,6 +46,9 @@ def test_save_fuerza_nueva_sobre_default_legado_abierta():
         db_path = Path(d) / "legacy.db"
         with patch.object(storage, "DB_PATH", db_path):
             _crear_tabla_legada(db_path)
+            # Como en producción: init_db() corre al arranque y aplica los ALTER
+            # (columnas nuevas) sin tocar el DEFAULT legado de `estado`.
+            storage.init_db()
             inc_id = classifications.save(
                 {"nombre": "Jaime A", "departamento": "MANTENIMIENTO"},
                 "Mancha de humedad en habitación 47",

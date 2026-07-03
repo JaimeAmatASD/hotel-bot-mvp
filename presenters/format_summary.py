@@ -1,4 +1,6 @@
 """Summary formatters for individual reports."""
+import html
+
 from config.enums import ReportType
 from presenters.constants import PRIORIDAD_EMOJI, TIPO_EMOJI
 
@@ -6,10 +8,11 @@ from presenters.constants import PRIORIDAD_EMOJI, TIPO_EMOJI
 def format_summary(result: dict) -> str:
     tipo = result.get("tipo", ReportType.ERROR)
     prioridad = result.get("prioridad")
-    ubicacion = result.get("ubicacion")
-    categoria = result.get("categoria")
-    subcategoria = result.get("subcategoria")
-    descripcion = result.get("descripcion", "")
+    # Estos campos van dentro de parse_mode=HTML: un '<' sin escapar rompe el envío
+    ubicacion = html.escape(result.get("ubicacion") or "") or None
+    categoria = html.escape(result.get("categoria") or "") or None
+    subcategoria = html.escape(result.get("subcategoria") or "") or None
+    descripcion = html.escape(result.get("descripcion") or "")
 
     tipo_emoji = TIPO_EMOJI.get(tipo, "❓")
     prioridad_str = f" — {PRIORIDAD_EMOJI.get(prioridad, '')} {prioridad}" if prioridad else ""

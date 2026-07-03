@@ -1,10 +1,13 @@
 """Notify the original reporter when their incident changes state."""
+import logging
 import storage
 from config import settings
 from config.enums import IncidentState, ReportType
 from presenters import build_timeline_text, calculate_total_time
 from notifier.format import build_keyboard_for_state
 from notifier.sender import as_sender
+
+logger = logging.getLogger(__name__)
 
 
 async def notify_employee_state_change(
@@ -43,11 +46,18 @@ async def notify_employee_state_change(
     else:
         return
 
-    reporter_tid = None
-    for tid, emp in employees.items():
-        if emp.get("nombre") == reporter_name:
-            reporter_tid = tid
-            break
+    reporter_tid = incident.get("employee_telegram_id")
+    if reporter_tid is not None:
+        try:
+            reporter_tid = int(reporter_tid)
+        except (TypeError, ValueError):
+            reporter_tid = None
+    if reporter_tid is None:
+        # Fallback por nombre para filas anteriores a la columna employee_telegram_id
+        for tid, emp in employees.items():
+            if emp.get("nombre") == reporter_name:
+                reporter_tid = tid
+                break
 
     if not reporter_tid:
         return
@@ -59,8 +69,8 @@ async def notify_employee_state_change(
     sender = as_sender(bot)
     try:
         await sender.send_text(chat_id=actual_tid, text=text)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("No se pudo avisar al reporter %s de %s: %s", actual_tid, display_id, e)
 
 
 import asyncio
@@ -87,8 +97,8 @@ async def notify_assignee(bot, incident: dict, employees: dict) -> None:
     sender = as_sender(bot)
     try:
         await sender.send_text(chat_id=_resolve_recipient(tid), text=text, reply_markup=keyboard)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("No se pudo avisar al asignado %s de %s: %s", tid, display_id, e)
 
 
 async def notify_managers_resolved(bot, incident: dict, actor_name: str, employees: dict) -> None:
@@ -103,7 +113,7 @@ async def notify_managers_resolved(bot, incident: dict, actor_name: str, employe
     async def _send(tid):
         try:
             await sender.send_text(chat_id=_resolve_recipient(tid), text=text, reply_markup=keyboard)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("No se pudo avisar al manager %s de %s: %s", tid, display_id, e)
 
     await asyncio.gather(*(_send(t) for t in recipients), return_exceptions=True)

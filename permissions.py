@@ -48,18 +48,29 @@ def can_act_on_incident(user: dict, incident: dict) -> bool:
     return False
 
 
+def _is_reporter(user: dict, incident: dict) -> bool:
+    """Identidad por telegram_id; fallback por nombre para filas anteriores a la columna."""
+    reporter_tid = incident.get("employee_telegram_id")
+    if reporter_tid is not None:
+        try:
+            return int(reporter_tid) == int(user.get("telegram_id", -1))
+        except (TypeError, ValueError):
+            return False
+    return incident.get("employee_name") == user.get("nombre")
+
+
 def can_see_incident(user: dict, incident: dict) -> bool:
     """
     GERENTE_GENERAL ve todas.
     ENCARGADO ve las de su departamento.
-    EMPLEADO ve las que él reportó (por employee_name) y las asignadas a él.
+    EMPLEADO ve las que él reportó y las asignadas a él.
     """
     rol = user.get("rol", Role.EMPLEADO)
     if rol == Role.GERENTE_GENERAL:
         return True
     if rol == Role.ENCARGADO:
         return user.get("departamento") == _incident_department(incident)
-    if incident.get("employee_name") == user.get("nombre"):
+    if _is_reporter(user, incident):
         return True
     return _is_assignee(user, incident)
 

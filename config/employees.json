@@ -1,13 +1,6 @@
 {
   "employees": [
     {
-      "telegram_id": 7391337590,
-      "nombre": "Jaime A",
-      "departamento": "MANTENIMIENTO",
-      "idioma": "es",
-      "rol": "EMPLEADO"
-    },
-    {
       "telegram_id": 111111111,
       "nombre": "María García",
       "departamento": "HOUSEKEEPING",
@@ -27,13 +20,6 @@
       "departamento": "RECEPCION",
       "idioma": "en",
       "rol": "EMPLEADO"
-    },
-    {
-      "telegram_id": 8709342265,
-      "nombre": "Juan Encargado Mantenimiento",
-      "departamento": "MANTENIMIENTO",
-      "idioma": "es",
-      "rol": "ENCARGADO"
     },
     {
       "telegram_id": 444444444,

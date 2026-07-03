@@ -21,6 +21,9 @@ import report_processor
 
 async def handle_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tid = update.effective_user.id
+    if not context.bot_data.get("employees", {}).get(tid):
+        await update.message.reply_text("No estás registrado en el sistema.")
+        return
     args = context.args  # list of words after /debug
 
     if args and args[0].lower() == "on":
@@ -127,6 +130,9 @@ async def handle_hab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tid = update.effective_user.id
     employees = context.bot_data.get("employees", {})
     user = employees.get(tid)
+    if not user:
+        await update.message.reply_text("No estás registrado en el sistema.")
+        return
 
     args = context.args or []
     if not args:
@@ -135,7 +141,7 @@ async def handle_hab(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     room = " ".join(args)
     all_incidents = get_incidents_for_room(room)
-    visible = filter_visible_incidents(user, all_incidents) if user else all_incidents
+    visible = filter_visible_incidents(user, all_incidents)
 
     open_states = {IncidentState.NUEVA, IncidentState.ASIGNADA, IncidentState.EN_PROCESO, IncidentState.RESUELTA}
     incidents_open = [i for i in visible if (i.get("estado") or IncidentState.NUEVA) in open_states]
@@ -163,6 +169,9 @@ async def handle_buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tid = update.effective_user.id
     employees = context.bot_data.get("employees", {})
     user = employees.get(tid)
+    if not user:
+        await update.message.reply_text("No estás registrado en el sistema.")
+        return
 
     args = context.args or []
     query = " ".join(args).strip()
@@ -172,7 +181,7 @@ async def handle_buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     results = search_classifications(query)
-    visible = filter_visible_incidents(user, results) if user else results
+    visible = filter_visible_incidents(user, results)
 
     if not visible:
         await update.message.reply_text(f"🔍 No encontré nada con '{query}'.")
@@ -248,15 +257,15 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tid = update.effective_user.id
     employees = context.bot_data.get("employees", {})
     user = employees.get(tid)
+    if not user:
+        await update.message.reply_text("❌ No estás registrado.")
+        return
     args = context.args or []
 
     if args:
         arg = args[0]
 
         if arg.lower() == "sector":
-            if not user:
-                await update.message.reply_text("❌ No estás registrado.")
-                return
             if not permissions.is_manager(tid, employees):
                 await update.message.reply_text(
                     "Solo encargados y gerencia pueden ver el estado del sector."
@@ -285,9 +294,6 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # /reporte 6h / 24h → consolidation with custom window
         if re.fullmatch(r"\d+h", arg, re.IGNORECASE):
             hours = int(arg[:-1])
-            if not user:
-                await update.message.reply_text("❌ No estás registrado.")
-                return
             items = report_processor.consolidate_recent_classifications(user["nombre"], hours)
             if not items:
                 await update.message.reply_text(
@@ -313,16 +319,15 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"No encontré REP-{report_id}.")
             return
 
-        if user:
-            role = user.get("rol", Role.EMPLEADO)
-            if role == Role.EMPLEADO and report.get("employee_telegram_id") != tid:
+        role = user.get("rol", Role.EMPLEADO)
+        if role == Role.EMPLEADO and report.get("employee_telegram_id") != tid:
+            await update.message.reply_text("No tenés permiso para ver ese reporte.")
+            return
+        if role == Role.ENCARGADO:
+            report_dept = report.get("employee_department")
+            if report_dept and report_dept != user.get("departamento"):
                 await update.message.reply_text("No tenés permiso para ver ese reporte.")
                 return
-            if role == Role.ENCARGADO:
-                report_dept = report.get("employee_department")
-                if report_dept and report_dept != user.get("departamento"):
-                    await update.message.reply_text("No tenés permiso para ver ese reporte.")
-                    return
 
         display_id = storage.generate_display_id(ReportType.REPORT, report_id)
         text = report_processor.render_shift_report(
@@ -335,10 +340,6 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # /reporte sin args → consolidate last DEFAULT_HOURS
-    if not user:
-        await update.message.reply_text("❌ No estás registrado.")
-        return
-
     hours = _DEFAULT_HOURS
     items = report_processor.consolidate_recent_classifications(user["nombre"], hours)
     if not items:
@@ -362,6 +363,9 @@ async def handle_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tid = update.effective_user.id
     employees = context.bot_data.get("employees", {})
     user = employees.get(tid)
+    if not user:
+        await update.message.reply_text("No estás registrado en el sistema.")
+        return
 
     args = context.args or []
     if not args:
@@ -380,7 +384,7 @@ async def handle_historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"No encontré INC-{incident_id}.")
         return
 
-    if user and not permissions.can_see_incident(user, incident):
+    if not permissions.can_see_incident(user, incident):
         await update.message.reply_text("No tenés permiso para ver esa incidencia.")
         return
 
