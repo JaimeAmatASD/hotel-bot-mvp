@@ -11,6 +11,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
+# httpx en INFO loguea la URL completa de cada request, que incluye el token del bot
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 from handlers.text_handler import handle_text
 from handlers.audio_handler import handle_audio
