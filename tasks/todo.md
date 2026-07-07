@@ -44,7 +44,15 @@ Rama activa: `feat/sprints-b3-b4-b5`
 
 ## Próximo
 
-Sin sprint planificado. **Piloto intra-sector: testeo real con Jaime (ENCARGADO SPA) y Juan (GERENTE_GENERAL).** `REPORT_NOTIFY_GERENTE=false` hasta validar el flujo con el encargado.
+Sin sprint planificado. **Piloto intra-sector: testeo real con Jaime y Juan (ambos MANTENIMIENTO).** `REPORT_NOTIFY_GERENTE=false` hasta validar el flujo con el encargado.
+
+### Pendientes operativos (post-revisión de seguridad 2026-07-03)
+
+- [ ] Backup diario de `data/hotel_bot.db` (cron con `sqlite3 .backup`)
+- [ ] systemd unit para el bot (arranque automático + restart on crash); hoy corre en foreground en terminal
+- [ ] Vaciar `bot.log` viejo (`> bot.log`) — contiene el token en las líneas httpx previas al fix `95576e1`; rotar token en BotFather si el log se compartió
+- [ ] Al deployar en otra máquina: copiar `config/employees.local.json` (IDs reales, gitignoreado)
+- [ ] Roadmap: /start con onboarding, recordatorios de CRITICA sin asignar, migrar consolidación de reportes a telegram_id
 
 ## Notas de testing activo
 
