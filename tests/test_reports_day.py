@@ -84,3 +84,33 @@ def test_carryover_is_ordered_oldest_first():
         _insert(con, descripcion="reciente", timestamp="2026-08-08T10:00:00")
     arrastre = storage.get_open_incidents_before_day(111, "2026-08-09")
     assert [i["descripcion"] for i in arrastre] == ["la más vieja", "media", "reciente"]
+
+
+EMPLEADO = {"telegram_id": 111, "nombre": "Jaime A", "departamento": "MANTENIMIENTO"}
+
+
+def test_upsert_report_is_idempotent_per_day():
+    primero = storage.upsert_report_for_day(EMPLEADO, "2026-08-09")
+    segundo = storage.upsert_report_for_day(EMPLEADO, "2026-08-09")
+    otro_dia = storage.upsert_report_for_day(EMPLEADO, "2026-08-10")
+    assert primero == segundo, "el mismo día reusa el informe"
+    assert otro_dia != primero
+    with storage._conn() as con:
+        assert con.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 2
+
+
+def test_upsert_refreshes_closed_at():
+    rid = storage.upsert_report_for_day(EMPLEADO, "2026-08-09")
+    with storage._conn() as con:
+        con.execute("UPDATE reports SET closed_at = '2026-08-09T08:00:00' WHERE id = ?", (rid,))
+    storage.upsert_report_for_day(EMPLEADO, "2026-08-09")
+    with storage._conn() as con:
+        cerrado = con.execute("SELECT closed_at FROM reports WHERE id=?", (rid,)).fetchone()[0]
+    assert cerrado > "2026-08-09T08:00:00"
+
+
+def test_upsert_separa_por_empleado():
+    otro = {"telegram_id": 222, "nombre": "Juan", "departamento": "MANTENIMIENTO"}
+    a = storage.upsert_report_for_day(EMPLEADO, "2026-08-09")
+    b = storage.upsert_report_for_day(otro, "2026-08-09")
+    assert a != b, "un informe por persona, no uno por día para todos"

@@ -43,6 +43,7 @@ from storage.reports import (
     get_classifications_for_employee_day,
     get_open_incidents_before_day,
     get_classifications_recent,
+    upsert_report_for_day,
 )
 from storage.queries import (
     get_open_incidents,

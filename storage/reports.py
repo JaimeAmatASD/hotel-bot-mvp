@@ -77,6 +77,33 @@ def get_classifications_for_employee_recent(
 _ESTADOS_TERMINALES = ("CERRADA", "CANCELADA")
 
 
+def upsert_report_for_day(employee: dict, day: str) -> int:
+    """Devuelve el informe del empleado para ese día, creándolo si no existe.
+
+    Reemplaza a create_report en el flujo de /reporte: volver a cerrar el informe del
+    mismo día actualiza el que ya está en vez de crear un REP nuevo. La unicidad la
+    garantiza el índice idx_reports_employee_day, no este código.
+    """
+    tid = employee.get("telegram_id", 0)
+    ahora = datetime.now().isoformat(timespec="seconds")
+    with _conn() as con:
+        row = con.execute(
+            "SELECT id FROM reports WHERE employee_telegram_id = ? AND report_date = ?",
+            (tid, day),
+        ).fetchone()
+        if row:
+            con.execute("UPDATE reports SET closed_at = ? WHERE id = ?", (ahora, row[0]))
+            return row[0]
+        cur = con.execute(
+            """INSERT INTO reports (employee_telegram_id, employee_name, employee_department,
+                                    started_at, closed_at, status, report_date)
+               VALUES (?,?,?,?,?,?,?)""",
+            (tid, employee.get("nombre"), employee.get("departamento"),
+             ahora, ahora, "CLOSED", day),
+        )
+        return cur.lastrowid
+
+
 def get_classifications_for_employee_day(telegram_id: int, day: str) -> list[dict]:
     """Ítems del empleado en un día calendario (YYYY-MM-DD).
 
