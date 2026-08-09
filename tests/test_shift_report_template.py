@@ -158,6 +158,12 @@ def test_carryover_is_capped_with_a_counter():
     assert "/abiertas" in texto
 
 
+def test_contador_de_una_sola_oculta_va_en_singular():
+    viejos = [_item(id=n, timestamp=f"2026-07-{n:02d}T10:00:00") for n in range(1, 7)]
+    texto = _render([], carryover=viejos)
+    assert "y 1 más abierta ·" in texto
+
+
 def test_carryover_under_the_cap_has_no_counter():
     viejos = [_item(id=n, timestamp=f"2026-07-{n:02d}T10:00:00") for n in range(1, 4)]
     texto = _render([], carryover=viejos)

@@ -692,6 +692,61 @@ async def test_sumar_algo_reabre_el_borrador_solo():
 
 
 @pytest.mark.asyncio
+async def test_escenario_dia_completo():
+    """Cargo dos cosas, cierro el informe, y al día siguiente la que quedó abierta arrastra."""
+    import report_processor
+    from handlers.command_handler import handle_reporte
+    from handlers.callback_handler import handle_callback
+
+    abierta = seed_classification(EMP_MANT, INCIDENCIA_204, "pierde agua la 204")
+    cerrada = seed_classification(EMP_MANT, INCIDENCIA_204, "lámpara quemada la 110")
+    with storage._conn() as con:
+        con.execute("UPDATE classifications SET estado='CERRADA' WHERE id=?", (cerrada,))
+
+    # 1. /reporte muestra los dos ítems y una sola pendiente
+    update = make_message_update(EMP_MANT["telegram_id"])
+    context = make_context()
+    await handle_reporte(update, context)
+    borrador = latest_reply_text(update)
+    assert "QUEDA PENDIENTE (1)" in borrador
+    assert borrador.index("QUEDA PENDIENTE") < borrador.index("INCIDENCIAS")
+
+    # 2. cerrar crea un REP y linkea los ítems del día
+    with patch("handlers.callback_handler.report_processor.notify_manager_report", new=AsyncMock()), \
+         patch("handlers.callback_handler.sheets_sync.sync_reporte", new=_noop_async):
+        await handle_callback(
+            make_callback_update(EMP_MANT["telegram_id"], "report_confirm_all"), context)
+    with storage._conn() as con:
+        assert con.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 1
+        linkeados = con.execute(
+            "SELECT COUNT(*) FROM classifications WHERE report_id IS NOT NULL").fetchone()[0]
+    assert linkeados == 2
+
+    # 3. volver a pedirlo el mismo día no crea un segundo REP
+    update2 = make_message_update(EMP_MANT["telegram_id"])
+    context2 = make_context()
+    await handle_reporte(update2, context2)
+    with patch("handlers.callback_handler.report_processor.notify_manager_report", new=AsyncMock()), \
+         patch("handlers.callback_handler.sheets_sync.sync_reporte", new=_noop_async):
+        await handle_callback(
+            make_callback_update(EMP_MANT["telegram_id"], "report_confirm_all"), context2)
+    with storage._conn() as con:
+        assert con.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 1
+
+    # 4. al día siguiente, la que sigue abierta aparece como arrastre marcada con ↩
+    with storage._conn() as con:
+        con.execute("UPDATE classifications SET timestamp = '2026-01-02T10:00:00' WHERE id=?",
+                    (abierta,))
+    arrastre = storage.get_open_incidents_before_day(EMP_MANT["telegram_id"], "2026-01-03")
+    assert [i["id"] for i in arrastre] == [abierta]
+    texto = report_processor.render_shift_report(
+        [], display_id="REP-002", employee_name=EMP_MANT["nombre"],
+        department=EMP_MANT["departamento"], carryover=arrastre)
+    assert "↩ 02/01" in texto
+    assert "Sin ítems cargados hoy." in texto
+
+
+@pytest.mark.asyncio
 async def test_employee_cannot_read_other_employee_incident_history():
     """Front-line employees should not see incidents reported by other staff."""
     from handlers.command_handler import handle_historial

@@ -163,7 +163,8 @@ def render_shift_report(items: list[dict], *, display_id: str, employee_name: st
             lines.append(_pendiente_line(it, arrastre=es_arrastre))
         ocultas = len(pendientes) - _MAX_CARRYOVER
         if ocultas > 0:
-            lines.append(f"…y {ocultas} más abiertas · /abiertas para verlas")
+            plural = "abiertas" if ocultas != 1 else "abierta"
+            lines.append(f"…y {ocultas} más {plural} · /abiertas para verlas")
 
     lines.append(_DIVIDER)
     lines.extend(section_lines or ["Sin ítems cargados hoy."])
