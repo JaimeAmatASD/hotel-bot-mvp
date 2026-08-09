@@ -3,13 +3,26 @@
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
-      "Read(./**/secrets/**)",
-      "Bash(rm -rf:*)"
+      "Bash(cat .env:*)",
+      "Bash(cat .env)",
+      "Bash(rm -rf:*)",
+      "Bash(rm -fr:*)",
+      "Bash(rm -r -f:*)",
+      "Bash(rm -f -r:*)",
+      "Bash(rm --recursive --force:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)"
     ],
     "ask": [
+      "Bash(rm -r:*)",
+      "Bash(rm --recursive:*)",
       "Bash(git push:*)",
+      "Bash(git rebase:*)",
+      "Bash(git checkout:*)",
       "Bash(pip install:*)",
-      "Bash(pip3 install:*)"
+      "Bash(pip3 install:*)",
+      "Bash(venv/bin/pip install:*)"
     ]
   }
 }
