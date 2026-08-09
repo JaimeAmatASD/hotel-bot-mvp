@@ -9,13 +9,47 @@ from config import settings
 from config.enums import IncidentState, ReportType, NotificationMode, Role
 from notifier.sender import as_sender
 from presenters.constants import ESTADO_EMOJI
+from presenters.format_location import shorten_room_label
 
 _DIVIDER = "──────────────────────────"
 _TERMINAL_STATES = {IncidentState.CERRADA, IncidentState.CANCELADA}
+_MAX_DESC = 60
+# Con 13 pendientes arrastradas, el informe de hoy queda sepultado. Se muestran las
+# más viejas y el resto va como contador; /abiertas tiene la lista completa.
+_MAX_CARRYOVER = 5
 
 
 def _value(item: dict, key: str) -> str:
     return str(item.get(key) or "").strip()
+
+
+def _truncate(texto: str, limite: int = _MAX_DESC) -> str:
+    """Colapsa espacios y corta. Un informe de 15 ítems sin esto no se lee en el celular."""
+    texto = " ".join(texto.split())
+    return texto if len(texto) <= limite else texto[:limite - 1].rstrip() + "…"
+
+
+def _pendiente_line(item: dict, *, arrastre: bool = False) -> str:
+    """Línea de pendiente, con ID accionable y marca ↩ si viene arrastrada de otro día.
+
+    El arrastre lo dice quien llama, no se deduce comparando fechas: con cero ítems
+    cargados hoy no habría contra qué comparar.
+    """
+    estado = item.get("estado") or IncidentState.NUEVA
+    ubic = shorten_room_label(_value(item, "ubicacion")) or "Sin ubicación"
+    desc = _truncate(_value(item, "descripcion") or "Sin descripción")
+    prio = _value(item, "prioridad")
+    prio_part = f" · {prio}" if prio else ""
+    did = storage.generate_display_id(ReportType.INCIDENCIA, item.get("id", 0))
+    marca = ""
+    if arrastre:
+        ts = _value(item, "timestamp")
+        try:
+            marca = f" · ↩ {datetime.fromisoformat(ts).strftime('%d/%m')}"
+        except ValueError:
+            marca = " · ↩"
+    return (f"• {did} · {ubic} — {desc}{prio_part} · "
+            f"{ESTADO_EMOJI.get(estado, '')} {estado}{marca}")
 
 
 def _guest_context(item: dict) -> str:
@@ -34,23 +68,23 @@ def _guest_context(item: dict) -> str:
 def _incident_line(prefix: str, item: dict) -> str:
     estado = item.get("estado") or IncidentState.NUEVA
     em = ESTADO_EMOJI.get(estado, "")
-    ubic = _value(item, "ubicacion") or "Sin ubicación"
-    desc = _value(item, "descripcion") or "Sin descripción"
+    ubic = shorten_room_label(_value(item, "ubicacion")) or "Sin ubicación"
+    desc = _truncate(_value(item, "descripcion") or "Sin descripción")
     prio = _value(item, "prioridad")
     prio_part = f" · {prio}" if prio else ""
     return f"{prefix} {ubic} — {desc}{prio_part} · {em} {estado}{_guest_context(item)}"
 
 
 def _guest_line(prefix: str, item: dict) -> str:
-    ubic = _value(item, "ubicacion")
-    desc = _value(item, "descripcion") or "Sin descripción"
+    ubic = shorten_room_label(_value(item, "ubicacion"))
+    desc = _truncate(_value(item, "descripcion") or "Sin descripción")
     prefix_text = f"{ubic} — " if ubic else ""
     return f"{prefix} {prefix_text}{desc}{_guest_context(item)}"
 
 
 def _observation_line(prefix: str, item: dict) -> str:
-    ubic = _value(item, "ubicacion")
-    desc = _value(item, "descripcion") or "Sin descripción"
+    ubic = shorten_room_label(_value(item, "ubicacion"))
+    desc = _truncate(_value(item, "descripcion") or "Sin descripción")
     prefix_text = f"{ubic} — " if ubic else ""
     return f"{prefix} {prefix_text}{desc}"
 
@@ -99,9 +133,14 @@ def _render_item_sections(items: list[dict]) -> tuple[list[str], list[dict]]:
 
 
 def render_shift_report(items: list[dict], *, display_id: str, employee_name: str,
-                        department: str | None, closed_at: str | None = None) -> str:
+                        department: str | None, carryover: list[dict] | tuple = (),
+                        closed_at: str | None = None) -> str:
     """Plantilla única del informe de turno. Reutilizada por el resumen previo,
-    la notificación al manager y /reporte REP-N."""
+    la notificación al manager y /reporte REP-N.
+
+    `carryover` son incidencias abiertas de días anteriores: se muestran entre los
+    pendientes pero no cuentan como ítems del día ni se linkean al informe.
+    """
     total = len(items)
 
     rng = _time_range(items)
@@ -111,29 +150,30 @@ def render_shift_report(items: list[dict], *, display_id: str, employee_name: st
         f"📋 INFORME DE TURNO — {display_id}",
         header2,
         f"🕐 {meta}{total} ítem{'s' if total != 1 else ''}",
-        _DIVIDER,
     ]
 
-    section_lines, pendientes = _render_item_sections(items)
+    section_lines, pendientes_hoy = _render_item_sections(items)
+    # El arrastre va primero dentro de los pendientes: son los que llevan más tiempo.
+    pendientes = [(it, True) for it in carryover] + [(it, False) for it in pendientes_hoy]
     if pendientes:
-        lines.append(f"🎯 Handover: {len(pendientes)} pendiente(s) para el próximo turno")
-        lines.append(_DIVIDER)
-    lines.extend(section_lines)
-
-    if pendientes:
-        lines.append("⏳ QUEDA PENDIENTE PARA EL PRÓXIMO TURNO")
-        for it in pendientes:
-            lines.append(_incident_line("•", it))
-        if department:
-            lines.append(f"Recibe seguimiento: {department}")
+        lines.append("")
+        lines.append(f"⚠️ QUEDA PENDIENTE ({len(pendientes)})")
+        for it, es_arrastre in pendientes[:_MAX_CARRYOVER]:
+            lines.append(_pendiente_line(it, arrastre=es_arrastre))
+        ocultas = len(pendientes) - _MAX_CARRYOVER
+        if ocultas > 0:
+            lines.append(f"…y {ocultas} más abiertas · /abiertas para verlas")
 
     lines.append(_DIVIDER)
+    lines.extend(section_lines or ["Sin ítems cargados hoy."])
+    lines.append(_DIVIDER)
+
     if closed_at:
         try:
             ct = datetime.fromisoformat(closed_at).strftime("%H:%M")
-            lines.append(f"Cerrado {ct} · /reporte {display_id} para ver")
+            lines.append(f"Cerrado {ct} · /reporte {display_id}")
         except ValueError:
-            lines.append(f"/reporte {display_id} para ver")
+            lines.append(f"/reporte {display_id}")
     return "\n".join(lines)
 
 

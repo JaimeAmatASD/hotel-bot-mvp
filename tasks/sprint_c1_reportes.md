@@ -35,6 +35,7 @@ migra de `employee_name` a `employee_telegram_id`, con backfill previo.
 | `/reporte 6h` / `/reporte 24h` | **Se elimina** |
 | Botón "✏️ Corregir un ítem" del informe | **Se elimina** (corregir sigue estando al cargar el ítem) |
 | Los 16 ítems huérfanos históricos | No se tocan. Los 3 que siguen abiertos reaparecen solos como arrastre |
+| Tope de arrastre mostrado | 5, las más viejas primero, y un contador `…y N más abiertas · /abiertas` |
 
 ## Fuera de alcance (explícito)
 
