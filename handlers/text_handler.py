@@ -5,7 +5,6 @@ from brain import process_message
 from handlers import get_employee
 from handlers._state import pop_previous
 from handlers._flow import present_result
-from handlers._corrections import handle_item_correction, handle_item_selection
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -15,11 +14,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text
-
-    if await handle_item_correction(update, context, employee, text):
-        return
-    if await handle_item_selection(update, context, employee, text):
-        return
 
     state = pop_previous(context)
     if state.timed_out:

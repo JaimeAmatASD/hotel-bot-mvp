@@ -7,7 +7,6 @@ from brain import process_message
 from handlers import get_employee
 from handlers._state import pop_previous
 from handlers._flow import present_result
-from handlers._corrections import handle_item_correction, handle_item_selection
 from transcriber import transcribe
 
 
@@ -32,18 +31,6 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     audio = update.message.voice or update.message.audio
     if not audio:
         return
-
-    # Item-level correction flows: transcribe first then dispatch to the shared handler.
-    if context.user_data.get("awaiting_item_correction") or context.user_data.get("awaiting_correction_item"):
-        await update.message.reply_text("🎧 Transcribiendo...")
-        text = await _transcribe_audio(context.bot, audio, employee)
-        if not text:
-            await update.message.reply_text("No pude transcribir el audio. Intentá con texto.")
-            return
-        if await handle_item_correction(update, context, employee, text):
-            return
-        if await handle_item_selection(update, context, employee, text):
-            return
 
     state = pop_previous(context)
     if state.timed_out:

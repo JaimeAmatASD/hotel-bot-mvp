@@ -1,6 +1,6 @@
 """Presentation layer: formatters, keyboards, emojis. No I/O."""
 from presenters.constants import PRIORIDAD_EMOJI, TIPO_EMOJI
-from presenters.keyboards import CONFIRM_KEYBOARD
+from presenters.keyboards import CONFIRM_KEYBOARD, REPORT_DRAFT_KEYBOARD
 from presenters.format_summary import (
     format_summary, format_summary_with_warning, format_debug_block,
 )

@@ -652,6 +652,46 @@ async def test_reporte_trae_el_dia_aunque_ya_este_consolidado():
 
 
 @pytest.mark.asyncio
+async def test_cerrar_dos_veces_el_mismo_dia_no_crea_dos_reps():
+    from handlers.command_handler import handle_reporte
+    from handlers.callback_handler import handle_callback
+
+    seed_classification(EMP_MANT, INCIDENCIA_204, "pierde agua la 204")
+
+    for _ in range(2):
+        update = make_message_update(EMP_MANT["telegram_id"])
+        context = make_context()
+        await handle_reporte(update, context)
+        cierre = make_callback_update(EMP_MANT["telegram_id"], "report_confirm_all")
+        with patch("handlers.callback_handler.report_processor.notify_manager_report",
+                   new=AsyncMock()), \
+             patch("handlers.callback_handler.sheets_sync.sync_reporte", new=_noop_async):
+            await handle_callback(cierre, context)
+
+    with storage._conn() as con:
+        assert con.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_sumar_algo_reabre_el_borrador_solo():
+    """Tras confirmar un ítem con el borrador abierto, el informe vuelve sin tipear /reporte."""
+    from handlers.callback_handler import handle_callback
+
+    context = make_context({
+        "report_draft_open": True,
+        "pending": {"result": dict(INCIDENCIA_204), "original_text": "pierde agua la 204"},
+    })
+    update = make_callback_update(EMP_MANT["telegram_id"], "confirm")
+    with patch("handlers.callback_handler.notifier.notify_incident", new=AsyncMock()), \
+         patch("handlers.callback_handler.sheets_sync.sync_incidencia", new=_noop_async):
+        await handle_callback(update, context)
+
+    enviados = [c.kwargs.get("text", "") for c in context.bot.send_message.call_args_list]
+    assert any("INFORME DE TURNO" in t for t in enviados), \
+        "el borrador tiene que volver solo"
+
+
+@pytest.mark.asyncio
 async def test_employee_cannot_read_other_employee_incident_history():
     """Front-line employees should not see incidents reported by other staff."""
     from handlers.command_handler import handle_historial

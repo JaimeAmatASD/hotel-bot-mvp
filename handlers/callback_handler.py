@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 from handlers import get_employee
@@ -219,7 +219,6 @@ async def _handle_assign_to(query, context) -> None:
 async def _handle_report_confirm(query, context) -> None:
     pending = context.user_data.get("pending_report_items", {})
     items = pending.get("items", [])
-    hours = pending.get("hours", 12)
     employees = context.bot_data["employees"]
     tid = query.from_user.id
     employee = employees.get(tid) or {"nombre": "", "departamento": "", "telegram_id": tid}
@@ -227,10 +226,15 @@ async def _handle_report_confirm(query, context) -> None:
     await query.edit_message_reply_markup(reply_markup=None)
     await query.answer()
 
-    report_id = storage.create_report(employee)
+    # Upsert: volver a cerrar el informe de hoy actualiza el mismo REP, no crea otro.
+    # El arrastre no va en `items`, así que no se re-linkea: cada ítem pertenece al
+    # informe del día en que se cargó.
+    day = pending.get("day") or date.today().isoformat()
+    report_id = storage.upsert_report_for_day(employee, day)
     classification_ids = [i["id"] for i in items]
     storage.link_classifications_to_report(classification_ids, report_id)
     context.user_data.pop("pending_report_items", None)
+    context.user_data.pop("report_draft_open", None)
 
     report = storage.get_report_with_items(report_id)
     display_id = storage.generate_display_id(ReportType.REPORT, report_id)
@@ -245,24 +249,31 @@ async def _handle_report_confirm(query, context) -> None:
     asyncio.create_task(sheets_sync.sync_reporte(report, items, display_id))
 
 
-async def _handle_report_correct_start(query, context) -> None:
-    pending = context.user_data.get("pending_report_items", {})
-    items = pending.get("items", [])
-    hours = pending.get("hours", 12)
-    n = len(items)
-
+async def _handle_report_add_item(query, context) -> None:
+    """No abre ninguna máquina de estados: el ítem entra por el flujo normal y, como la
+    ventana del informe es el día entero, aparece solo. La bandera es solo para volver
+    a mostrar el borrador sin tipear /reporte otra vez."""
     await query.answer()
     await query.edit_message_reply_markup(reply_markup=None)
-
-    context.user_data["awaiting_correction_item"] = {
-        "report_items": items,
-        "hours": hours,
-        "started_at": datetime.now().isoformat(),
-    }
+    context.user_data["report_draft_open"] = True
     await context.bot.send_message(
         chat_id=query.message.chat_id,
-        text=f"¿Qué ítem corregís? Mandame el número (1-{n}).",
+        text="Dale, mandame qué querés sumar (texto, audio o foto).",
     )
+
+
+async def _resend_report_draft(query, context, employee) -> None:
+    """Vuelve a mostrar el borrador del día tras sumar un ítem."""
+    hoy = date.today().isoformat()
+    tid = query.from_user.id
+    items = storage.get_classifications_for_employee_day(tid, hoy)
+    carryover = storage.get_open_incidents_before_day(tid, hoy)
+    context.user_data["pending_report_items"] = {
+        "items": items, "carryover": carryover, "day": hoy,
+    }
+    texto, teclado = report_processor.format_report_summary(items, employee, carryover)
+    await context.bot.send_message(
+        chat_id=query.message.chat_id, text=texto, reply_markup=teclado)
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -285,8 +296,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_report_confirm(query, context)
         return
 
-    if action == "report_correct":
-        await _handle_report_correct_start(query, context)
+    if action == "report_add_item":
+        await _handle_report_add_item(query, context)
         return
 
     await query.answer()
@@ -353,6 +364,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif tipo == ReportType.OBSERVACION:
             obs_display = storage.generate_display_id(ReportType.OBSERVACION, incident_id)
             asyncio.create_task(sheets_sync.sync_observacion(result, employee, obs_display))
+
+        if context.user_data.get("report_draft_open"):
+            await _resend_report_draft(query, context, employee)
 
     elif action == "correct":
         context.user_data["awaiting_correction"] = True

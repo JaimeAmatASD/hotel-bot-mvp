@@ -1,7 +1,7 @@
 """Retrospective shift report: consolidation, formatting, and manager notification."""
 
 from datetime import datetime
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardMarkup
 
 import storage
 import permissions
@@ -10,6 +10,7 @@ from config.enums import IncidentState, ReportType, NotificationMode, Role
 from notifier.sender import as_sender
 from presenters.constants import ESTADO_EMOJI
 from presenters.format_location import shorten_room_label
+from presenters.keyboards import REPORT_DRAFT_KEYBOARD
 
 _DIVIDER = "──────────────────────────"
 _TERMINAL_STATES = {IncidentState.CERRADA, IncidentState.CANCELADA}
@@ -219,10 +220,6 @@ def consolidate_recent_classifications(employee_name: str, hours: int) -> list[d
     return storage.get_classifications_for_employee_recent(employee_name, hours, exclude_in_report=True)
 
 
-_CONFIRM_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("✅ Todo bien — cerrar REP", callback_data="report_confirm_all"),
-    InlineKeyboardButton("✏️ Corregir un ítem", callback_data="report_correct"),
-]])
 
 
 def format_report_summary(items: list[dict], employee: dict,
@@ -239,7 +236,7 @@ def format_report_summary(items: list[dict], employee: dict,
         carryover=carryover,
     )
     text += "\n\n¿Sumás algo más o lo cerramos?"
-    return text, _CONFIRM_KEYBOARD
+    return text, REPORT_DRAFT_KEYBOARD
 
 
 def format_report_for_sheet(items: list[dict]) -> str:
