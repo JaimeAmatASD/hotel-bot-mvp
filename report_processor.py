@@ -225,18 +225,20 @@ _CONFIRM_KEYBOARD = InlineKeyboardMarkup([[
 ]])
 
 
-def format_report_summary(items: list[dict], employee: dict, hours: int) -> tuple[str, InlineKeyboardMarkup]:
-    """Resumen previo a confirmar, con la plantilla del informe (display_id borrador).
+def format_report_summary(items: list[dict], employee: dict,
+                          carryover: list[dict] | tuple = ()) -> tuple[str, InlineKeyboardMarkup]:
+    """Borrador previo a confirmar, con la plantilla del informe (display_id borrador).
 
-    items: list of classification dicts from DB (already saved, have id/tipo/estado).
-    Returns (message_text, keyboard).
+    items: clasificaciones del día ya guardadas (tienen id/tipo/estado).
+    carryover: incidencias abiertas de días anteriores, solo para mostrar.
     """
     text = render_shift_report(
         items, display_id="(borrador)",
         employee_name=employee.get("nombre", ""),
         department=employee.get("departamento"),
+        carryover=carryover,
     )
-    text += "\n\nRevisá y confirmá para cerrar el informe del turno."
+    text += "\n\n¿Sumás algo más o lo cerramos?"
     return text, _CONFIRM_KEYBOARD
 
 

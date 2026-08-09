@@ -144,7 +144,7 @@ class TestReporteSummary(Base):
         items = storage.get_classifications_for_employee_recent("Jaime A", 6)
         self.assertEqual(len(items), 3)
 
-        text, keyboard = report_processor.format_report_summary(items, self.EMPLOYEE, 6)
+        text, keyboard = report_processor.format_report_summary(items, self.EMPLOYEE)
         self.assertIn("INCIDENCIAS", text)
         self.assertIn("NOTAS DE HUÉSPED", text)
         self.assertIn("NOVEDADES DEL TURNO", text)
@@ -155,7 +155,7 @@ class TestReporteSummary(Base):
         _insert_classification(str(self.db_path), "Jaime A", "INCIDENCIA", "Inc 1")
         _insert_classification(str(self.db_path), "Jaime A", "OBSERVACION", "Obs 2")
         items = storage.get_classifications_for_employee_recent("Jaime A", 12)
-        text, _ = report_processor.format_report_summary(items, self.EMPLOYEE, 12)
+        text, _ = report_processor.format_report_summary(items, self.EMPLOYEE)
         self.assertIn("1.", text)
         self.assertIn("2.", text)
 

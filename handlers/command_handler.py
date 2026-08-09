@@ -13,6 +13,7 @@ from handlers import (
     format_incident_history,
 )
 from notifier import build_keyboard_for_state
+from datetime import date
 import re
 import storage
 import permissions
@@ -250,9 +251,6 @@ async def handle_porvalidar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-_DEFAULT_HOURS = 12
-
-
 async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tid = update.effective_user.id
     employees = context.bot_data.get("employees", {})
@@ -291,27 +289,12 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(text)
             return
 
-        # /reporte 6h / 24h → consolidation with custom window
-        if re.fullmatch(r"\d+h", arg, re.IGNORECASE):
-            hours = int(arg[:-1])
-            items = report_processor.consolidate_recent_classifications(user["nombre"], hours)
-            if not items:
-                await update.message.reply_text(
-                    f"No reportaste nada en las últimas {hours}h. ¿Querés ampliar? `/reporte {hours * 2}h`",
-                    parse_mode="Markdown",
-                )
-                return
-            context.user_data["pending_report_items"] = {"items": items, "hours": hours}
-            text, keyboard = report_processor.format_report_summary(items, user, hours)
-            await update.message.reply_text(text, reply_markup=keyboard)
-            return
-
         # /reporte REP-N → view existing report
         raw = arg.upper().removeprefix("REP-")
         try:
             report_id = int(raw)
         except ValueError:
-            await update.message.reply_text("Usá /reporte, /reporte 6h, o /reporte REP-N.")
+            await update.message.reply_text("Usá /reporte o /reporte REP-N.")
             return
 
         report = storage.get_report_with_items(report_id)
@@ -339,18 +322,21 @@ async def handle_reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text)
         return
 
-    # /reporte sin args → consolidate last DEFAULT_HOURS
-    hours = _DEFAULT_HOURS
-    items = report_processor.consolidate_recent_classifications(user["nombre"], hours)
-    if not items:
+    # /reporte sin args → la tira del día
+    hoy = date.today().isoformat()
+    items = storage.get_classifications_for_employee_day(tid, hoy)
+    carryover = storage.get_open_incidents_before_day(tid, hoy)
+
+    if not items and not carryover:
         await update.message.reply_text(
-            f"No reportaste nada en las últimas {hours}h. ¿Querés ampliar? `/reporte 24h`",
-            parse_mode="Markdown",
+            "Hoy no cargaste nada todavía. Mandame lo que haya pasado y después poné /reporte."
         )
         return
 
-    context.user_data["pending_report_items"] = {"items": items, "hours": hours}
-    text, keyboard = report_processor.format_report_summary(items, user, hours)
+    context.user_data["pending_report_items"] = {
+        "items": items, "carryover": carryover, "day": hoy,
+    }
+    text, keyboard = report_processor.format_report_summary(items, user, carryover)
     await update.message.reply_text(text, reply_markup=keyboard)
 
 

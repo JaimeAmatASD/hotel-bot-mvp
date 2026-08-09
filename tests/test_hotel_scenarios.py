@@ -630,6 +630,28 @@ async def test_shift_report_links_items_and_manager_can_open_report():
 
 
 @pytest.mark.asyncio
+async def test_reporte_trae_el_dia_aunque_ya_este_consolidado():
+    """El bug original: consolidar una vez hacía desaparecer los ítems para siempre."""
+    from handlers.command_handler import handle_reporte
+
+    primero = seed_classification(EMP_MANT, INCIDENCIA_204, "pierde agua la 204")
+    segundo = seed_classification(EMP_MANT, INCIDENCIA_204, "otra cosa en la 204")
+    # el primero ya fue consolidado en un informe anterior
+    storage.link_classifications_to_report([primero], 99)
+
+    update = make_message_update(EMP_MANT["telegram_id"])
+    context = make_context()
+    await handle_reporte(update, context)
+
+    texto = latest_reply_text(update)
+    assert "No reportaste nada" not in texto
+    assert "INFORME DE TURNO" in texto
+    ids = [i["id"] for i in context.user_data["pending_report_items"]["items"]]
+    assert sorted(ids) == sorted([primero, segundo]), \
+        "el ya consolidado tiene que seguir apareciendo"
+
+
+@pytest.mark.asyncio
 async def test_employee_cannot_read_other_employee_incident_history():
     """Front-line employees should not see incidents reported by other staff."""
     from handlers.command_handler import handle_historial
