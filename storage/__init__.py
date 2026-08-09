@@ -40,6 +40,8 @@ from storage.reports import (
     link_classification_to_report,
     link_classifications_to_report,
     get_classifications_for_employee_recent,
+    get_classifications_for_employee_day,
+    get_open_incidents_before_day,
     get_classifications_recent,
 )
 from storage.queries import (

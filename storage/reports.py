@@ -74,6 +74,49 @@ def get_classifications_for_employee_recent(
     return [dict(r) for r in rows]
 
 
+_ESTADOS_TERMINALES = ("CERRADA", "CANCELADA")
+
+
+def get_classifications_for_employee_day(telegram_id: int, day: str) -> list[dict]:
+    """Ítems del empleado en un día calendario (YYYY-MM-DD).
+
+    A diferencia de get_classifications_for_employee_recent, NO filtra por report_id:
+    ese filtro es lo que hacía que un ítem ya consolidado desapareciera para siempre.
+    """
+    with _conn() as con:
+        rows = con.execute(
+            """SELECT * FROM classifications
+                WHERE employee_telegram_id = ?
+                  AND date(timestamp) = ?
+                  AND tipo NOT IN ('NO_REPORTE', 'ERROR')
+                ORDER BY timestamp ASC""",
+            (telegram_id, day),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_open_incidents_before_day(telegram_id: int, day: str) -> list[dict]:
+    """Incidencias que reportó esta persona ANTES de `day` y siguen sin cerrarse.
+
+    Es el arrastre: se muestra en el informe de hoy pero no se re-linkea, porque cada
+    ítem pertenece al informe del día en que se cargó. El criterio es "sigue sin
+    resolverse", no "nunca se consolidó", así que no filtra por report_id.
+    Van de más vieja a más nueva: la plantilla muestra solo las primeras.
+    """
+    placeholders = ",".join("?" * len(_ESTADOS_TERMINALES))
+    with _conn() as con:
+        rows = con.execute(
+            f"""SELECT * FROM classifications
+                 WHERE employee_telegram_id = ?
+                   AND date(timestamp) < ?
+                   AND tipo = 'INCIDENCIA'
+                   AND COALESCE(estado, 'NUEVA') NOT IN ({placeholders})
+                 ORDER BY timestamp ASC""",
+            (telegram_id, day, *_ESTADOS_TERMINALES),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_classifications_recent(hours: int) -> list[dict]:
     """Todas las clasificaciones en las últimas N horas (excluye NO_REPORTE/ERROR),
     de cualquier empleado y sin importar si ya están en un reporte. Solo lectura."""
