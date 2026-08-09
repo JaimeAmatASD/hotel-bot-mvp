@@ -2,6 +2,19 @@
 
 Bot Telegram para gestión de incidencias hoteleras con IA (Gemini + Groq Whisper).
 
+Por qué es así: `decisions.md`. Errores que ya nos comimos: `tasks/lessons.md`.
+Cómo tiene que salir el output del bot: `references.md`.
+
+## Con quién estás trabajando
+
+Jaime dirige este proyecto pero no lee código. No se lo mandes.
+
+- Nada de diffs. Se le muestra: qué hace ahora en idioma del dominio, qué escenarios
+  pasan, el estado de la suite, y qué tiene que mirar él.
+- Términos técnicos: cinco palabras entre paréntesis y seguir.
+- Preguntale lo que solo él sabe (qué sería un desastre en el hotel, si un mensaje al
+  empleado suena bien). No le preguntes qué librería usar: eso se decide y se informa.
+
 ## Stack
 - LLM: `google-genai` (NO `google-generativeai`) — modelo `gemini-2.5-flash`
 - STT: `groq` — Whisper Large v3 Turbo
@@ -19,7 +32,7 @@ storage/     → paquete con módulos por dominio (schema, classifications, even
 notifier/    → paquete: format, send, dispatch, filters, state_change, sender (port)
 presenters/  → formatters, keyboards, constants — capa de presentación
 handlers/    → routing Telegram delgado (text, audio, photo, callback, command)
-  _state.py, _flow.py, _corrections.py → helpers compartidos
+  _state.py, _flow.py → helpers compartidos
 sheets_sync.py → espejo Google Sheets; SQLite sigue siendo la única fuente de verdad
 ```
 
@@ -42,11 +55,38 @@ sheets_sync.py → espejo Google Sheets; SQLite sigue siendo la única fuente de
 
 ## Testing
 
-- Suite normal: `venv/bin/pytest -q` → 232 tests verdes, 5 integration deselected.
+- Suite normal: `venv/bin/pytest -q` → 299 tests verdes, 9 integration deselected.
 - Suite completa con APIs reales: `venv/bin/pytest -q -o addopts=''` → incluye integration Gemini/Groq.
 - Escenarios hoteleros E2E fake: `tests/test_hotel_scenarios.py` cubre empleado → confirmación → notificación, consultas gerente, followup, ciclo work-order completo (tomar/comenzar/terminado/validar), delegación encargado→empleado + reabrir, rechazo por permisos, reporte de turno y visibilidad de historial.
 - Integration tests de audio usan fixtures reales en `audios/`; no moverlos a `tests/integration/audios/`.
 
-## Workflow
+## Cómo trabajar acá
 
-Escribir plan y esperar aprobación del usuario ANTES de implementar cualquier feature.
+- **Escribir el plan y esperar luz verde ANTES de implementar cualquier feature.**
+- **Cambios chicos y verificables.** Uno por vez, suite en verde entre uno y otro.
+- **No sobre-ingeniería.** Esto es un bot de hotel, no una plataforma. Si una función
+  alcanza, no armes una jerarquía de clases. Si no hay tres casos, no hay abstracción.
+- **No toques lo que no te pidieron.** Si ves algo mal al lado, avisá; no lo arregles
+  de prepo. Si TU cambio deja algo huérfano, eso sí se limpia.
+- **"Listo" significa suite en verde.** Correla antes de reportar.
+- **Dos intentos y frenás.** Si un fix no sale en dos vueltas, explicá qué probaste y
+  qué necesitás para destrabarlo.
+- **Suite verde no significa que el bot responda bien.** Protege la estructura, no el
+  texto que le llega al empleado. Una salida generada que nadie leyó se reporta como
+  "sin revisar".
+
+## El loop de aprendizaje
+
+1. **Antes de una tarea no trivial**, leé `tasks/lessons.md`. Si lo que vas a hacer ya
+   figura como error, no lo repitas.
+2. **Todo bug arreglado deja dos cosas**: un test que lo reproduce (rojo antes que
+   verde) y una línea en `tasks/lessons.md` escrita como prohibición, no como consejo.
+3. **Toda bifurcación real** —donde se podía ir para dos lados— se anota en
+   `decisions.md` con su costo aceptado. Si no hay costo, no era una decisión.
+4. **Todo output del bot que salga notablemente bien o mal** se pega en `references.md`.
+   Un anti-ejemplo enseña más que tres párrafos de convención.
+
+<!-- Lo que tenga que cumplirse sí o sí no alcanza con estar escrito acá: va también
+     como deny o hook en .claude/settings.json. -->
+
+Convenciones que aplican solo a ciertos archivos viven en `.claude/rules/`.
