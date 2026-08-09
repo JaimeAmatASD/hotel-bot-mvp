@@ -1295,18 +1295,19 @@ for nombre, tid in (('Jaime', 7391337590), ('Juan', 8709342265)):
 "
 ```
 
-Esperado exacto: **Jaime 2** (incidencias #20 y #21) y **Juan 1** (#18). Las tres son huérfanas
-hoy inalcanzables; que reaparezcan es la prueba de que el bug quedó cerrado.
+Esperado exacto: **Jaime 7** y **Juan 6** — 13 incidencias abiertas de días anteriores, la más
+vieja del 29/06.
 
-> #18 tiene `employee_telegram_id` en NULL en la base actual: es de Juan, y solo aparece si el
-> backfill de la Task 1 corrió. Si Juan da 0, la migración v2 no se aplicó.
+> Ojo con este número: el arrastre **no** filtra por `report_id`. Trae toda incidencia abierta de
+> días anteriores, esté o no en un informe viejo — el criterio es "sigue sin resolverse", no
+> "nunca se consolidó". Los huérfanos (#18, #20, #21) son solo 3 de esas 13.
 
 - [ ] **Step 4: Prueba a mano en Telegram**
 
 Levantar el bot, mandar `/reporte` como Jaime y verificar:
 1. Aparece la tira del día (no "no reportaste nada").
-2. Salen 2 incidencias viejas bajo `⚠️ QUEDA PENDIENTE` con su `↩ dd/mm` (#20 del 06/07 y #21 del
-   06/07). Como Juan, tiene que salir 1 (#18 del 02/07).
+2. Salen las incidencias viejas bajo `⚠️ QUEDA PENDIENTE` con su `↩ dd/mm` (7 para Jaime, 6 para Juan
+   con la base actual).
 3. "➕ Sumar algo" deja cargar un ítem y el borrador vuelve solo.
 4. "✅ Listo, cerrar" crea el REP y le llega a Juan.
 5. `/reporte` de nuevo: mismo REP-N, no uno nuevo.

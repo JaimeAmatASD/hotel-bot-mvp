@@ -82,8 +82,20 @@ def init_db():
                 started_at           TEXT NOT NULL,
                 closed_at            TEXT,
                 closure_type         TEXT,
-                status               TEXT NOT NULL
+                status               TEXT NOT NULL,
+                report_date          TEXT
             )
+        """)
+        # CREATE TABLE IF NOT EXISTS es no-op sobre una base que ya existe, así que la
+        # columna hay que agregarla aparte antes de indexarla.
+        report_cols = [row[1] for row in con.execute("PRAGMA table_info(reports)").fetchall()]
+        if "report_date" not in report_cols:
+            con.execute("ALTER TABLE reports ADD COLUMN report_date TEXT")
+        # Un informe por empleado por día. La garantía vive acá, no en un if del handler.
+        # Los duplicados históricos los fusiona la migración v3, que baja este índice primero.
+        con.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_employee_day
+                ON reports(employee_telegram_id, report_date)
         """)
         con.execute("""
             CREATE TABLE IF NOT EXISTS report_messages (
