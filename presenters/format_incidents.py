@@ -3,6 +3,7 @@ import storage
 from config.enums import IncidentState, ReportType
 from permissions import _incident_department
 from presenters.format_relative import format_relative_time, format_priority_emoji
+from presenters.format_location import shorten_room_label
 
 
 def _resolve_assignee_name(incident: dict, employees: dict) -> str | None:
@@ -18,10 +19,13 @@ def format_incident_line(incident: dict, employees: dict) -> str:
     display_id = storage.generate_display_id(ReportType.INCIDENCIA, iid)
     prioridad = incident.get("prioridad", "")
     emoji = format_priority_emoji(prioridad)
-    ubicacion = incident.get("ubicacion", "")
+    ubicacion = shorten_room_label(incident.get("ubicacion", ""))
     descripcion = incident.get("descripcion", "")
     created_at = incident.get("timestamp", "")
     dept = _incident_department(incident)
+    categoria = incident.get("categoria") or dept
+    subcategoria = incident.get("subcategoria")
+    dept_label = f"{categoria} › {subcategoria}" if subcategoria else dept
     estado = incident.get("estado") or IncidentState.NUEVA
 
     assignee = _resolve_assignee_name(incident, employees)
@@ -40,7 +44,7 @@ def format_incident_line(incident: dict, employees: dict) -> str:
 
     time_str = format_relative_time(created_at) if created_at else ""
     line1 = f"{emoji} {display_id} — {prioridad} — {ubicacion} — {descripcion}"
-    line2 = f"   {dept} · Reportada {time_str} · {estado_str}"
+    line2 = f"   {dept_label} · Reportada {time_str} · {estado_str}"
     return f"{line1}\n{line2}"
 
 

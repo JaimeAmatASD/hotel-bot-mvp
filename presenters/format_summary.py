@@ -3,13 +3,14 @@ import html
 
 from config.enums import ReportType
 from presenters.constants import PRIORIDAD_EMOJI, TIPO_EMOJI
+from presenters.format_location import shorten_room_label
 
 
 def format_summary(result: dict) -> str:
     tipo = result.get("tipo", ReportType.ERROR)
     prioridad = result.get("prioridad")
     # Estos campos van dentro de parse_mode=HTML: un '<' sin escapar rompe el envío
-    ubicacion = html.escape(result.get("ubicacion") or "") or None
+    ubicacion = html.escape(shorten_room_label(result.get("ubicacion"))) or None
     categoria = html.escape(result.get("categoria") or "") or None
     subcategoria = html.escape(result.get("subcategoria") or "") or None
     descripcion = html.escape(result.get("descripcion") or "")

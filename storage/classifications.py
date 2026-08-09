@@ -11,9 +11,9 @@ def save(employee: dict, message: str, result: dict) -> int:
         cur = con.execute("""
             INSERT INTO classifications
             (timestamp, employee_name, employee_dept, employee_telegram_id, message, tipo, prioridad,
-             categoria, ubicacion, confianza, campos_faltantes, habitacion,
+             categoria, subcategoria, ubicacion, confianza, campos_faltantes, habitacion,
              huesped_afectado, descripcion, photo_path, estado)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             datetime.now().isoformat(timespec="seconds"),
             employee["nombre"],
@@ -23,6 +23,7 @@ def save(employee: dict, message: str, result: dict) -> int:
             result.get("tipo"),
             result.get("prioridad"),
             result.get("categoria"),
+            result.get("subcategoria"),
             result.get("ubicacion"),
             result.get("confianza"),
             json.dumps(result.get("campos_faltantes", []), ensure_ascii=False),
@@ -59,7 +60,7 @@ def update_classification(classification_id: int, result: dict) -> None:
     with _conn() as con:
         con.execute(
             """UPDATE classifications SET
-               tipo = ?, prioridad = ?, categoria = ?, ubicacion = ?,
+               tipo = ?, prioridad = ?, categoria = ?, subcategoria = ?, ubicacion = ?,
                descripcion = ?, huesped_afectado = ?, habitacion = ?,
                campos_faltantes = ?, confianza = ?
                WHERE id = ?""",
@@ -67,6 +68,7 @@ def update_classification(classification_id: int, result: dict) -> None:
                 result.get("tipo"),
                 result.get("prioridad"),
                 result.get("categoria"),
+                result.get("subcategoria"),
                 result.get("ubicacion"),
                 result.get("descripcion"),
                 int(result.get("huesped_afectado") or 0),
@@ -129,9 +131,10 @@ def search_classifications(query: str, days_back: int = 90, limit: int = 10) -> 
                WHERE timestamp >= ?
                  AND (LOWER(message) LIKE LOWER(?)
                    OR LOWER(descripcion) LIKE LOWER(?)
-                   OR LOWER(ubicacion) LIKE LOWER(?))
+                   OR LOWER(ubicacion) LIKE LOWER(?)
+                   OR LOWER(subcategoria) LIKE LOWER(?))
                ORDER BY timestamp DESC
                LIMIT ?""",
-            (since, pattern, pattern, pattern, limit),
+            (since, pattern, pattern, pattern, pattern, limit),
         ).fetchall()
     return [dict(r) for r in rows]

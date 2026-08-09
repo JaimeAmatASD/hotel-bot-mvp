@@ -4,6 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config.enums import IncidentState, ReportType
 from presenters.constants import PRIORIDAD_EMOJI, TIPO_EMOJI
+from presenters.format_location import shorten_room_label
 
 
 def _time_ago(dt_str: str) -> str:
@@ -64,7 +65,7 @@ def format_notification_message(
     prioridad = incident.get("prioridad", "")
     categoria = incident.get("categoria", "")
     subcategoria = incident.get("subcategoria")
-    ubicacion = incident.get("ubicacion", "")
+    ubicacion = shorten_room_label(incident.get("ubicacion", ""))
     descripcion = incident.get("descripcion", "")
     reporter_name = reporter.get("nombre", "")
     reporter_dept = reporter.get("departamento", "")

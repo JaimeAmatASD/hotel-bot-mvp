@@ -4,6 +4,7 @@ import storage
 from config.enums import ReportType
 from presenters.constants import ACTION_EMOJI, ACTION_LABELS
 from presenters.format_relative import format_relative_time, format_priority_emoji
+from presenters.format_location import shorten_room_label
 
 
 def calculate_total_time(events: list[dict]) -> str:
@@ -53,7 +54,7 @@ def format_incident_history(incident: dict, events: list[dict]) -> str:
     iid = incident.get("id", 0)
     display_id = storage.generate_display_id(ReportType.INCIDENCIA, iid)
     prioridad = incident.get("prioridad", "")
-    ubicacion = incident.get("ubicacion", "")
+    ubicacion = shorten_room_label(incident.get("ubicacion", ""))
     descripcion = incident.get("descripcion", "")
 
     lines = [f"📋 Historial {display_id}", ""]

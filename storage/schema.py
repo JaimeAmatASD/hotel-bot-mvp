@@ -14,6 +14,7 @@ def init_db():
                 tipo             TEXT,
                 prioridad        TEXT,
                 categoria        TEXT,
+                subcategoria     TEXT,
                 ubicacion        TEXT,
                 confianza        REAL,
                 campos_faltantes TEXT,
@@ -46,6 +47,8 @@ def init_db():
             con.execute("ALTER TABLE classifications ADD COLUMN photo_path TEXT")
         if "employee_telegram_id" not in cols:
             con.execute("ALTER TABLE classifications ADD COLUMN employee_telegram_id INTEGER")
+        if "subcategoria" not in cols:
+            con.execute("ALTER TABLE classifications ADD COLUMN subcategoria TEXT")
         pref_cols = [row[1] for row in con.execute("PRAGMA table_info(user_preferences)").fetchall()]
         if "notification_mode" not in pref_cols:
             con.execute("ALTER TABLE user_preferences ADD COLUMN notification_mode TEXT DEFAULT 'criticas'")

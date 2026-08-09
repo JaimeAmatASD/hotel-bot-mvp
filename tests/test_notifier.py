@@ -63,7 +63,7 @@ def test_format_notification_sin_redirect():
     assert "🔔 Nueva incidencia" in msg
     assert "MANTENIMIENTO" in msg
     assert "ALTA" in msg
-    assert "Habitación 305" in msg
+    assert "Hab 305" in msg
     assert "Goteo en el baño" in msg
     assert "Jaime A" in msg
     assert "🧪" not in msg

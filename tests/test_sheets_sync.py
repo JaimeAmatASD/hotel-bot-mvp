@@ -35,7 +35,7 @@ async def test_sync_incidencia_new_id_appends():
     ws.append_row.assert_called_once()
     ws.update.assert_not_called()
     row = ws.append_row.call_args[0][0]
-    assert len(row) == 15  # A..O con las 3 columnas nuevas
+    assert len(row) == 16  # A..P incluyendo Subcategoría
 
 
 # T2: sync_incidencia con ID existente → update, no append
@@ -139,3 +139,52 @@ def test_ensure_headers_existing_headers_no_duplicate():
 
     for ws in ws_mocks.values():
         ws.insert_row.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Habitación 48", "48"),
+        ("hab 48", "48"),
+        ("Hab. 48", "48"),
+        ("room 48", "48"),
+        ("Cuarto 48A", "48A"),
+        ("48", "48"),
+        ("Lobby", "Lobby"),
+        ("Pasillo planta 2", "Pasillo planta 2"),
+    ],
+)
+def test_format_room_for_sheet_normalizes_room_locations(raw, expected):
+    assert sheets_sync._format_room_for_sheet(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_sync_incidencia_uses_filter_friendly_room_location():
+    ws = _make_ws_mock(col_a_values=["ID"])
+    with patch.object(sheets_sync, "_get_worksheet", return_value=ws):
+        result = await sheets_sync.sync_incidencia(
+            {
+                "employee_name": "Ana",
+                "estado": "NUEVA",
+                "timestamp": "2024-01-01",
+                "ubicacion": "Habitación 48",
+            },
+            "INC-048",
+        )
+    assert result is True
+    row = ws.append_row.call_args[0][0]
+    assert row[4] == "48"
+
+
+@pytest.mark.asyncio
+async def test_sync_guest_intel_uses_filter_friendly_room():
+    ws = _make_ws_mock()
+    with patch.object(sheets_sync, "_get_worksheet", return_value=ws):
+        result = await sheets_sync.sync_guest_intel(
+            {"descripcion": "Prefiere almohada blanda", "habitacion_huesped": "Habitación 204"},
+            {"nombre": "María", "departamento": "HK"},
+            "MEM-204",
+        )
+    assert result is True
+    row = ws.append_row.call_args[0][0]
+    assert row[3] == "204"

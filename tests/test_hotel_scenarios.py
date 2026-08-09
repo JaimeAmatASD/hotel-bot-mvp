@@ -174,6 +174,7 @@ async def test_employee_report_confirm_and_manager_queries():
     incident = storage.get_incident(1)
     assert incident["tipo"] == "INCIDENCIA"
     assert incident["ubicacion"] == "Habitación 204"
+    assert incident["subcategoria"] == "Fontanería"
     assert incident["estado"] == "NUEVA"
     assert len(storage.get_events_for_incident(1)) == 1
 
@@ -183,7 +184,8 @@ async def test_employee_report_confirm_and_manager_queries():
     await handle_abiertas(abiertas_update, manager_ctx)
     abiertas_text = latest_reply_text(abiertas_update)
     assert "INC-001" in abiertas_text
-    assert "Habitación 204" in abiertas_text
+    assert "Hab 204" in abiertas_text
+    assert "MANTENIMIENTO › Fontanería" in abiertas_text
 
     room_update = make_message_update(GERENTE["telegram_id"])
     manager_ctx.args = ["204"]

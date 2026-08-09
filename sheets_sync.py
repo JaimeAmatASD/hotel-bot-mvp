@@ -4,6 +4,7 @@ Si Sheets falla, se loguea pero nunca se propaga — el bot no se cae."""
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime
 
 import gspread
@@ -22,9 +23,9 @@ _worksheets: dict[str, gspread.Worksheet] = {}
 
 _HEADERS = {
     "Incidencias":       ["ID", "Fecha/hora creación", "Empleado", "Departamento",
-                          "Ubicación", "Categoría", "Prioridad", "Descripción",
-                          "Estado", "Asignado a", "Última actualización", "Foto",
-                          "Asignado por", "Resuelto por", "Validado por"],
+                          "Ubicación", "Categoría", "Subcategoría", "Prioridad",
+                          "Descripción", "Estado", "Asignado a", "Última actualización",
+                          "Foto", "Asignado por", "Resuelto por", "Validado por"],
     "Guest Intel":       ["ID", "Fecha/hora", "Empleado", "Habitación huésped",
                           "Tipo de nota", "Descripción", "Idioma original"],
     "Observaciones":     ["ID", "Fecha/hora", "Empleado", "Departamento",
@@ -32,6 +33,24 @@ _HEADERS = {
     "Reportes de turno": ["ID", "Fecha/hora de cierre", "Empleado",
                           "Cantidad de ítems", "Desglose", "Resumen / link"],
 }
+
+_ROOM_LOCATION_RE = re.compile(
+    r"\b(?:hab(?:itaci[oó]n)?\.?|room|cuarto)\s*[-#:]?\s*(\d+[A-Za-z]?)\b",
+    re.IGNORECASE,
+)
+
+
+def _format_room_for_sheet(value: str | None) -> str:
+    """Return a filter-friendly room value for Sheets: 'Habitación 48' -> '48'."""
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"\d+[A-Za-z]?", text):
+        return text
+    match = _ROOM_LOCATION_RE.search(text)
+    if match:
+        return match.group(1)
+    return text
 
 
 def _get_client() -> gspread.Client:
@@ -94,8 +113,9 @@ def _sync_incidencia_sync(incident: dict, display_id: str, employees: dict | Non
         incident.get("timestamp", ""),
         incident.get("employee_name", ""),
         incident.get("employee_dept", ""),
-        incident.get("ubicacion", "") or "",
+        _format_room_for_sheet(incident.get("ubicacion")),
         incident.get("categoria", "") or "",
+        incident.get("subcategoria", "") or "",
         incident.get("prioridad", "") or "",
         incident.get("descripcion", "") or "",
         incident.get("estado", IncidentState.NUEVA),
@@ -110,7 +130,7 @@ def _sync_incidencia_sync(incident: dict, display_id: str, employees: dict | Non
     col_a = ws.col_values(1)
     if display_id in col_a:
         row_num = col_a.index(display_id) + 1
-        ws.update(f"A{row_num}:O{row_num}", [row])
+        ws.update(f"A{row_num}:P{row_num}", [row])
     else:
         ws.append_row(row)
 
@@ -121,7 +141,7 @@ def _sync_guest_intel_sync(result: dict, employee: dict, display_id: str) -> Non
         display_id,
         datetime.now().isoformat(timespec="seconds"),
         employee.get("nombre", ""),
-        result.get("habitacion_huesped", "") or "",
+        _format_room_for_sheet(result.get("habitacion_huesped")),
         result.get("tipo_nota_huesped", "") or "",
         result.get("descripcion", "") or "",
         result.get("idioma_original", "") or "",

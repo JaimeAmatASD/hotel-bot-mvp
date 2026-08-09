@@ -4,6 +4,7 @@ import storage
 from config import settings
 from config.enums import IncidentState, ReportType
 from presenters import build_timeline_text, calculate_total_time
+from presenters.format_location import shorten_room_label
 from notifier.format import build_keyboard_for_state
 from notifier.sender import as_sender
 
@@ -20,7 +21,7 @@ async def notify_employee_state_change(
     reporter_name = incident.get("employee_name", "")
     display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident["id"])
     descripcion = incident.get("descripcion", "")
-    ubicacion = incident.get("ubicacion", "")
+    ubicacion = shorten_room_label(incident.get("ubicacion", ""))
     short_desc = descripcion[:30] + "…" if len(descripcion) > 30 else descripcion
 
     reporter_first = reporter_name.split()[0] if reporter_name else "empleado"
@@ -91,7 +92,7 @@ async def notify_assignee(bot, incident: dict, employees: dict) -> None:
     tid = int(tid)
     display_id = storage.generate_display_id(ReportType.INCIDENCIA, incident["id"])
     desc = incident.get("descripcion", "")
-    ubic = incident.get("ubicacion", "")
+    ubic = shorten_room_label(incident.get("ubicacion", ""))
     text = f"🔔 Nueva tarea asignada — {display_id}\n🔧 {desc}\n📍 {ubic}\nCuando puedas, marcá tu avance acá abajo 👇"
     keyboard = build_keyboard_for_state(incident["id"], IncidentState.ASIGNADA)
     sender = as_sender(bot)

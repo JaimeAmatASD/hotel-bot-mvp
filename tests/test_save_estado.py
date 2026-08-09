@@ -59,3 +59,24 @@ def test_save_fuerza_nueva_sobre_default_legado_abierta():
     assert inc["estado"] == IncidentState.NUEVA, (
         f"esperaba NUEVA, obtuve {inc['estado']!r} (default legado se filtró)"
     )
+
+
+def test_save_persiste_subcategoria_en_db_legada():
+    with tempfile.TemporaryDirectory() as d:
+        db_path = Path(d) / "legacy.db"
+        with patch.object(storage, "DB_PATH", db_path):
+            _crear_tabla_legada(db_path)
+            storage.init_db()
+            inc_id = classifications.save(
+                {"nombre": "Jaime A", "departamento": "MANTENIMIENTO"},
+                "Pierde agua el grifo de la 204",
+                {
+                    "tipo": "INCIDENCIA",
+                    "prioridad": "ALTA",
+                    "categoria": "MANTENIMIENTO",
+                    "subcategoria": "FONTANERIA",
+                },
+            )
+            inc = classifications.get_incident(inc_id)
+
+    assert inc["subcategoria"] == "FONTANERIA"

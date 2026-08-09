@@ -5,6 +5,7 @@ from presenters.format_summary import (
     format_summary, format_summary_with_warning, format_debug_block,
 )
 from presenters.format_relative import format_relative_time, format_priority_emoji
+from presenters.format_location import shorten_room_label
 from presenters.format_incidents import (
     format_incident_line, format_incident_list, format_room_view,
 )

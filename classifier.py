@@ -50,6 +50,21 @@ Pregúntate: ¿este dato hace que alguien del hotel deba hacer algo diferente? S
 - MEDIA: falla operativa sin huésped afectado de inmediato.
 - BAJA: cosmético o que puede esperar (cuadro torcido, pintura desgastada).
 
+# Reglas para SUBCATEGORÍA
+
+Usa "subcategoria" para indicar la especialidad operativa cuando aporte valor.
+Para categoria MANTENIMIENTO, preferí estos valores normalizados:
+- FONTANERIA: grifos, duchas, baños, cisternas, fugas, desagües, humedad por agua.
+- ELECTRICIDAD: luces, enchufes, llaves térmicas, cortocircuitos, fallas eléctricas.
+- CLIMATIZACION: aire acondicionado, calefacción, termostatos, ventilación.
+- CARPINTERIA: puertas, cerraduras, bisagras, muebles, cajones, madera.
+- PINTURA: pintura saltada, manchas, retoques, paredes marcadas.
+- ALBANILERIA: azulejos, yeso, techo, grietas, obra menor.
+- EQUIPAMIENTO: TV, minibar, caja fuerte, teléfono, electrodomésticos.
+- OTRO: mantenimiento claro sin especialidad inferible.
+Para LIMPIEZA, usa subcategorías simples cuando sean claras: HABITACION, BANO, ROPA_BLANCA, ZONA_COMUN, AMENITIES, OTRO.
+Si la categoría no es MANTENIMIENTO ni LIMPIEZA, deja subcategoria en null salvo que el mensaje lo haga muy evidente.
+
 # Reglas de output
 
 1. Devuelve SOLAMENTE un JSON válido. Sin texto antes ni después. Sin envoltura de markdown.

@@ -22,6 +22,15 @@ def test_columnas_trazabilidad_existen():
         assert c in cols, f"falta columna {c}"
 
 
+def test_columna_subcategoria_existe():
+    with tempfile.TemporaryDirectory() as d:
+        with patch.object(storage, "DB_PATH", Path(d) / "t.db"):
+            storage.init_db()
+            with storage._conn() as con:
+                cols = _cols(con, "classifications")
+    assert "subcategoria" in cols
+
+
 def test_default_estado_es_nueva():
     with tempfile.TemporaryDirectory() as d:
         with patch.object(storage, "DB_PATH", Path(d) / "t.db"):
