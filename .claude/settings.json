@@ -3,23 +3,23 @@
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
-      "Bash(cat .env:*)",
       "Bash(cat .env)",
+      "Bash(cat .env:*)",
+
+      "Bash(rm -r:*)",
       "Bash(rm -rf:*)",
       "Bash(rm -fr:*)",
       "Bash(rm -r -f:*)",
       "Bash(rm -f -r:*)",
-      "Bash(rm --recursive --force:*)",
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(git reset --hard:*)"
-    ],
-    "ask": [
-      "Bash(rm -r:*)",
       "Bash(rm --recursive:*)",
+      "Bash(rm --recursive --force:*)",
+
       "Bash(git push:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
       "Bash(git rebase:*)",
-      "Bash(git checkout:*)",
+
       "Bash(pip install:*)",
       "Bash(pip3 install:*)",
       "Bash(venv/bin/pip install:*)"
