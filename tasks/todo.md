@@ -22,6 +22,9 @@ Rama activa: `feat/sprints-b3-b4-b5`
 | Flujo empleado | EN_PROCESO opcional + `/mistareas` + `/porvalidar` (cola del gerente) | `a096b29`…`38f01c0` |
 | Informe de turno | `/reporte` acumulativo con plantilla única + aviso al gerente gateado por `REPORT_NOTIFY_GERENTE` | `0fbeb3e`…`e436a3b` |
 | Reporte sector | `/reporte sector` — rollup read-only del sector (encargado/gerente) | `331b0ab`…`9567d78` |
+| Subcategoría + ubicación | Especialidad normalizada (FONTANERIA, ELECTRICIDAD, …) y `Hab 204` en Telegram / `204` en Sheets | `dcfb055` |
+| Health-check | Chequeo de Telegram/Gemini/Groq/Sheets al arranque, con redacción de secretos | `6c1cc41` |
+| C.1 Rediseño de informes | `/reporte` por día calendario, pendientes arriba, arrastre, upsert por día, pendientes en Sheets | `abf45a0`…`135d8ce` |
 
 ## Refactor integral (post-B.8)
 
@@ -52,7 +55,10 @@ Sin sprint planificado. **Piloto intra-sector: testeo real con Jaime y Juan (amb
 - [ ] systemd unit para el bot (arranque automático + restart on crash); hoy corre en foreground en terminal
 - [ ] Vaciar `bot.log` viejo (`> bot.log`) — contiene el token en las líneas httpx previas al fix `95576e1`; rotar token en BotFather si el log se compartió
 - [ ] Al deployar en otra máquina: copiar `config/employees.local.json` (IDs reales, gitignoreado)
-- [ ] Roadmap: /start con onboarding, recordatorios de CRITICA sin asignar, migrar consolidación de reportes a telegram_id
+- [ ] Roadmap: /start con onboarding, recordatorios de CRITICA sin asignar
+- [ ] Cerrar las 13 incidencias viejas abiertas (las más antiguas del 29/06): hoy aparecen como arrastre en todo informe
+- [ ] El clasificador marca casi todo como ALTA — revisar las reglas de prioridad
+- [ ] Las descripciones repiten la habitación que ya está en `ubicacion` ("Hab 60 — Cama cruje en habitación 60")
 
 ## Notas de testing activo
 

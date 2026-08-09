@@ -510,3 +510,39 @@ El test del filtro se ejercita con el flag ON explícito para no depender del de
 `get_classifications_recent()` es solo SELECT y el formato reusa las mismas secciones
 compartidas del informe individual. Regla: un comando de consulta jamás muta — si el
 rollup necesitara "marcar como visto", eso es otra feature con su propia transición.
+
+## Sprint C.1 — Rediseño del informe de turno (2026-08-09)
+
+**Una ventana deslizante + un filtro de "ya consolidado" pierde datos en silencio.**
+`/reporte` tomaba las últimas 12h y excluía lo que ya tuviera `report_id`. Con uso esporádico
+(testeo semanal), cada sesión caía fuera de la ventana antes del siguiente `/reporte`: 16 de 39
+clasificaciones no entraron jamás en un informe, y 14 eran ya inalcanzables. El síntoma que ve el
+usuario es "no hay nada que reportar"; la causa está dos capas más abajo, en el WHERE.
+Lección general: cuando el criterio de una consulta es temporal Y de estado, verificá qué pasa con
+las filas que caen fuera de los dos. Si no hay forma de recuperarlas, es pérdida de datos.
+
+**Poner el invariante en el esquema, no en el handler.** "Un informe por persona por día" es un
+`UNIQUE INDEX`, no un `if` antes del INSERT. El índice además destapó el duplicado histórico
+(REP-003/REP-004, los dos de Juan del 01/07) que un `if` nuevo habría dejado enterrado.
+
+**Migrar con un índice único ya creado requiere bajarlo primero.** Poblar la columna que indexa
+pasa necesariamente por un estado intermedio con duplicados — que son justamente los que la
+migración viene a fusionar. `DROP INDEX` → poblar → deduplicar → `CREATE INDEX`.
+
+**`init_db()` no corre migraciones.** `CREATE TABLE IF NOT EXISTS` es no-op sobre una base que ya
+existe, así que una columna nueva necesita ALTER explícito en `schema.py` *además* de la migración.
+Y como `init_db()` corre antes que `apply_pending()` en `bot.py`, olvidarlo rompe el arranque.
+
+**No deduzcas del dato lo que quien llama ya sabe.** La marca ↩ de arrastre se calculaba comparando
+la fecha del ítem contra la de `items[0]`. Con cero ítems cargados hoy no había contra qué comparar
+y la marca desaparecía justo cuando más importaba. Pasarlo como flag desde el llamador lo arregló y
+borró el caso borde.
+
+**Dimensionar con datos reales antes de diseñar la vista.** El arrastre se estimó en 3 mirando los
+huérfanos; en la base real eran 13, porque el criterio correcto es "sigue abierta", no "nunca se
+consolidó". De ahí salió el tope de 5 con contador.
+
+**Sacar un botón puede matar un subsistema entero.** Quitar "Corregir un ítem" del informe dejó
+`awaiting_correction_item` sin nadie que lo seteara, y con él `handlers/_corrections.py` completo
+(112 líneas) más su cableado en `text_handler` y `audio_handler`. No tenía un solo test. Cuando
+saques un punto de entrada, grepeá quién escribe la bandera que lo activa.
