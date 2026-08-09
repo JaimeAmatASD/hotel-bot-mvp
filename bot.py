@@ -81,6 +81,12 @@ def main():
     import sheets_sync
     sheets_sync.ensure_headers()
 
+    import health
+    estados = health.log_api_health()
+    caidas = [e.nombre for e in estados if not e.ok]
+    if caidas:
+        print(f"⚠️  APIs caídas: {', '.join(caidas)} — ver el log para el detalle.")
+
     print("Bot iniciado. Ctrl+C para detener.")
     app.run_polling()
 
