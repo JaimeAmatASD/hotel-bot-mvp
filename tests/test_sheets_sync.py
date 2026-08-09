@@ -188,3 +188,48 @@ async def test_sync_guest_intel_uses_filter_friendly_room():
     assert result is True
     row = ws.append_row.call_args[0][0]
     assert row[3] == "204"
+
+
+# --- Pendientes en la hoja de reportes (sprint C.1) ---
+
+REPORT_STUB = {"employee_name": "Jaime A", "closed_at": "2026-08-09T15:45:00"}
+
+
+def test_reporte_row_has_pendientes_columns():
+    items = [
+        {"id": 18, "tipo": "INCIDENCIA", "estado": "NUEVA",
+         "descripcion": "abierta", "ubicacion": "Hab 203"},
+        {"id": 19, "tipo": "INCIDENCIA", "estado": "CERRADA",
+         "descripcion": "cerrada", "ubicacion": "Hab 204"},
+    ]
+    ws = _make_ws_mock(col_a_values=["ID"])
+    with patch.object(sheets_sync, "_get_worksheet", return_value=ws):
+        sheets_sync._sync_reporte_sync(REPORT_STUB, items, "REP-012")
+
+    fila = ws.append_row.call_args[0][0]
+    assert len(fila) == 8, "la hoja pasó de 6 a 8 columnas"
+    assert fila[6] == 1, "una sola pendiente"
+    assert "INC-018" in fila[7]
+    assert "INC-019" not in fila[7], "la cerrada no es pendiente"
+
+
+def test_reporte_row_is_upserted_not_duplicated():
+    """Cerrar dos veces el mismo día actualiza la fila; si no, la hoja se llena de duplicados."""
+    ws = _make_ws_mock(col_a_values=["ID", "REP-012"])
+    with patch.object(sheets_sync, "_get_worksheet", return_value=ws):
+        sheets_sync._sync_reporte_sync(REPORT_STUB, [], "REP-012")
+
+    ws.append_row.assert_not_called()
+    ws.update.assert_called_once()
+    assert ws.update.call_args[0][0] == "A2:H2"
+
+
+def test_reporte_sin_pendientes_deja_las_columnas_vacias():
+    items = [{"id": 19, "tipo": "INCIDENCIA", "estado": "CERRADA", "descripcion": "cerrada"}]
+    ws = _make_ws_mock(col_a_values=["ID"])
+    with patch.object(sheets_sync, "_get_worksheet", return_value=ws):
+        sheets_sync._sync_reporte_sync(REPORT_STUB, items, "REP-013")
+
+    fila = ws.append_row.call_args[0][0]
+    assert fila[6] == 0
+    assert fila[7] == ""

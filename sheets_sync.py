@@ -11,6 +11,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 import report_processor
+import storage
 from config.enums import IncidentState, ReportType
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,11 @@ _HEADERS = {
                           "Tipo de nota", "Descripción", "Idioma original"],
     "Observaciones":     ["ID", "Fecha/hora", "Empleado", "Departamento",
                           "Descripción", "Categoría"],
+    # Pendientes/IDs pendientes van al final a propósito: la hoja ya tiene datos y
+    # meter columnas en el medio correría todo el histórico una posición.
     "Reportes de turno": ["ID", "Fecha/hora de cierre", "Empleado",
-                          "Cantidad de ítems", "Desglose", "Resumen / link"],
+                          "Cantidad de ítems", "Desglose", "Resumen / link",
+                          "Pendientes", "IDs pendientes"],
 }
 
 _ROOM_LOCATION_RE = re.compile(
@@ -172,6 +176,15 @@ def _sync_reporte_sync(report: dict, items: list[dict], display_id: str) -> None
     if n_gi:  desglose_parts.append(f"{n_gi} GI")
     if n_obs: desglose_parts.append(f"{n_obs} OBS")
     desglose = ", ".join(desglose_parts) or f"{len(items)} ítems"
+    pendientes = [i for i in items
+                  if i.get("tipo") == ReportType.INCIDENCIA
+                  and (i.get("estado") or IncidentState.NUEVA)
+                  not in (IncidentState.CERRADA, IncidentState.CANCELADA)]
+    # Un ítem sin id no tiene display id que mostrar; cuenta igual, pero no rompe el espejo.
+    ids_pendientes = ", ".join(
+        storage.generate_display_id(ReportType.INCIDENCIA, i["id"])
+        for i in pendientes if i.get("id") is not None)
+
     row = [
         display_id,
         report.get("closed_at") or report.get("started_at", ""),
@@ -179,8 +192,17 @@ def _sync_reporte_sync(report: dict, items: list[dict], display_id: str) -> None
         len(items),
         desglose,
         report_processor.format_report_for_sheet(items),
+        len(pendientes),
+        ids_pendientes,
     ]
-    ws.append_row(row)
+
+    # Upsert: cerrar dos veces el mismo día actualiza la fila en vez de duplicarla.
+    col_a = ws.col_values(1)
+    if display_id in col_a:
+        row_num = col_a.index(display_id) + 1
+        ws.update(f"A{row_num}:H{row_num}", [row])
+    else:
+        ws.append_row(row)
 
 
 # ---------------------------------------------------------------------------
